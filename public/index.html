@@ -440,15 +440,21 @@
             return `https://www.google.com/travel/flights/search?tfs=${b64}&hl=en`;
         }
 
-        // Airline ICAO → booking homepage URL.
-        // Airline deeplinks with query params are unreliable (airlines change URL
-        // structures without notice and most SPAs ignore query params). Instead we
-        // link directly to the airline's booking page and rely on Google Flights
-        // (protobuf URL builder) for reliable prefilled search.
-        const AIRLINE_BOOKING_PAGES = {
+        // Airline ICAO → deeplink builder or booking homepage URL.
+        // Most airlines use JavaScript SPAs that ignore URL query params.
+        // Where a working deeplink format has been confirmed (community-sourced
+        // or via developer docs), we use it. Otherwise, link to the booking
+        // homepage. Google Flights (protobuf URL) is always the primary "Book Now".
+        //
+        // Airlines with confirmed/likely-working deeplinks return a function.
+        // Airlines without return a static homepage string.
+        const AIRLINE_LINKS = {
+            // Qatar Airways: deepLinkLoader.xhtml endpoint (community-documented)
+            QTR: (o, d, date) =>
+                `https://booking.qatarairways.com/nsp/views/deepLinkLoader.xhtml?origin=${o}&destination=${d}&departureDate=${date}&adults=1&children=0&infants=0&cabinClass=Y&tripType=O`,
+            // All others: booking homepage (no confirmed deeplink params)
             UAE: 'https://www.emirates.com/flights/book',
             ETD: 'https://www.etihad.com/en/book',
-            QTR: 'https://www.qatarairways.com/en/book.html',
             SVA: 'https://www.saudia.com/booking',
             GFA: 'https://www.gulfair.com/book',
             KAC: 'https://www.kuwaitairways.com/en/booking',
@@ -481,8 +487,17 @@
             WIZ: 'https://wizzair.com/en-gb/booking',
         };
 
-        function getAirlineBookingPage(airlineIcao) {
-            return AIRLINE_BOOKING_PAGES[(airlineIcao || '').toUpperCase()] || '';
+        function buildAirlineUrl(airlineIcao, origin, dest, date) {
+            const entry = AIRLINE_LINKS[(airlineIcao || '').toUpperCase()];
+            if (!entry) return '';
+            if (typeof entry === 'function') return entry(origin, dest, date);
+            return entry;
+        }
+
+        // KAYAK has a well-documented public URL format that reliably
+        // prefills origin, destination, and date.
+        function buildKayakUrl(origin, dest, date) {
+            return `https://www.kayak.com/flights/${origin}-${dest}/${date}?sort=bestflight_a`;
         }
 
         function getAvailabilityHtml(airport, flight) {
@@ -514,7 +529,8 @@
                 const statusClass = getStatusClass(flight.status);
                 const depDate = flight.scheduled_departure.split(' ')[0] || '';
                 const gfUrl = buildGoogleFlightsUrl(airport, flight.destination_iata, depDate);
-                const airlinePage = getAirlineBookingPage(flight.airline_icao);
+                const airlineUrl = buildAirlineUrl(flight.airline_icao, airport, flight.destination_iata, depDate);
+                const kayakUrl = buildKayakUrl(airport, flight.destination_iata, depDate);
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td class="flight-number">${esc(flight.flight_number)}</td>
@@ -525,8 +541,9 @@
                     <td>${esc(flight.aircraft_type || '-')}</td>
                     <td class="avail-cell">${getAvailabilityHtml(airport, flight)}</td>
                     <td class="action-cell">
-                        <a href="${esc(gfUrl)}" target="_blank" rel="noopener" class="btn-book">Book Now</a>
-                        ${airlinePage ? `<a href="${esc(airlinePage)}" target="_blank" rel="noopener" class="btn-airline">Airline Site</a>` : ''}
+                        <a href="${esc(gfUrl)}" target="_blank" rel="noopener" class="btn-book">Google Flights</a>
+                        <a href="${esc(kayakUrl)}" target="_blank" rel="noopener" class="btn-book">KAYAK</a>
+                        ${airlineUrl ? `<a href="${esc(airlineUrl)}" target="_blank" rel="noopener" class="btn-airline">Airline Site</a>` : ''}
                     </td>
                 `;
                 tbody.appendChild(row);
