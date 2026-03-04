@@ -134,20 +134,25 @@
 
         async function fetchWithRetry(url, retries = MAX_RETRIES) {
             let lastErr;
+            let lastResp;
             for (let i = 0; i <= retries; i++) {
                 try {
                     const resp = await fetchWithTimeout(url);
                     if (resp.ok) return resp;
+                    // Return 4xx/5xx on last attempt so caller can read error JSON
+                    lastResp = resp;
                     if (resp.status >= 400 && resp.status < 500) return resp;
-                    throw new Error(`HTTP ${resp.status}`);
+                    if (i >= retries) return resp;
+                    // Retry 5xx
                 } catch (e) {
                     lastErr = e;
-                    if (i < retries) {
-                        const wait = 1000 * (2 ** i);
-                        await new Promise(r => setTimeout(r, wait));
-                    }
+                }
+                if (i < retries) {
+                    const wait = 1000 * (2 ** i);
+                    await new Promise(r => setTimeout(r, wait));
                 }
             }
+            if (lastResp) return lastResp;
             throw lastErr;
         }
 
