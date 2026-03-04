@@ -6,9 +6,17 @@ Every endpoint includes error isolation and timestamps.
 """
 
 import logging
+import os
+import sys
 from datetime import datetime, timezone
 
 from flask import Flask, jsonify, request
+
+# Vercel runs this file from the project root, but our modules live in api/.
+# Ensure api/ is on the import path so gcc_data, flight_service, etc. resolve.
+_api_dir = os.path.dirname(os.path.abspath(__file__))
+if _api_dir not in sys.path:
+    sys.path.insert(0, _api_dir)
 
 from gcc_data import GCC_AIRPORTS, PRIMARY_DEPARTURE_AIRPORTS
 from flight_service import FlightService
