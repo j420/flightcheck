@@ -156,9 +156,91 @@ button:disabled {
 .filters {
     display: flex;
     gap: 1.25rem;
+    align-items: center;
+    flex-wrap: wrap;
     margin-top: 0.75rem;
     padding-top: 0.75rem;
     border-top: 1px solid var(--border);
+}
+
+.dropdown-filter {
+    position: relative;
+    display: inline-block;
+}
+
+.dropdown-filter-btn {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.85rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.dropdown-filter-btn:hover {
+    background: var(--border);
+}
+
+.dropdown-arrow {
+    font-size: 0.7rem;
+    margin-left: 0.2rem;
+}
+
+.dropdown-filter-panel {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 100;
+    min-width: 220px;
+    max-height: 300px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    margin-top: 0.25rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.dropdown-filter-actions {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+}
+
+.dropdown-filter-actions a {
+    color: var(--accent);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.dropdown-filter-actions a:hover {
+    text-decoration: underline;
+}
+
+.dropdown-filter-list {
+    overflow-y: auto;
+    max-height: 250px;
+    padding: 0.35rem 0;
+}
+
+.dropdown-filter-list label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.82rem;
+    color: var(--text);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.dropdown-filter-list label:hover {
+    background: var(--border);
 }
 
 .filters label {
