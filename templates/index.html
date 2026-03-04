@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GCC Evacuation Flight Tracker</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>GCC Evacuation Flight Tracker</h1>
+        <p class="subtitle">Live commercial flights departing GCC airports to non-GCC destinations</p>
+        <p class="warning">Airspace status is fluid. Verify flight status directly with airlines before booking.</p>
+    </header>
+
+    <main>
+        <section class="controls">
+            <div class="airport-selector">
+                <label for="airport-select">Departure Airport:</label>
+                <select id="airport-select">
+                    <option value="">-- Select Airport --</option>
+                    {% for iata in primary_airports %}
+                    <option value="{{ iata }}">{{ airports[iata].city }} ({{ iata }}) - {{ airports[iata].name }}</option>
+                    {% endfor %}
+                    <optgroup label="Other GCC Airports">
+                    {% for iata, info in airports.items() %}
+                    {% if iata not in primary_airports %}
+                    <option value="{{ iata }}">{{ info.city }} ({{ iata }}) - {{ info.name }}</option>
+                    {% endif %}
+                    {% endfor %}
+                    </optgroup>
+                </select>
+                <button id="btn-search" onclick="searchFlights()">Search Departures</button>
+                <button id="btn-scan-all" onclick="scanAll()">Scan All Major Airports</button>
+            </div>
+
+            <div class="filters">
+                <label><input type="checkbox" id="filter-scheduled" checked> Scheduled</label>
+                <label><input type="checkbox" id="filter-estimated" checked> Estimated</label>
+                <label><input type="checkbox" id="filter-delayed" checked> Delayed</label>
+                <label><input type="checkbox" id="filter-unknown" checked> Unknown Status</label>
+            </div>
+        </section>
+
+        <section id="status-bar" class="status-bar hidden">
+            <span id="status-text">Loading...</span>
+            <span id="flight-count"></span>
+        </section>
+
+        <section id="results" class="results">
+            <div id="flights-container"></div>
+        </section>
+    </main>
+
+    <footer>
+        <p>Data sourced from FlightRadar24. For educational/emergency use only.</p>
+        <p>Always verify availability directly on the airline website before booking.</p>
+    </footer>
+
+    <script>
+        const API_BASE = '/api';
+
+        function showStatus(msg, count) {
+            const bar = document.getElementById('status-bar');
+            document.getElementById('status-text').textContent = msg;
+            document.getElementById('flight-count').textContent = count !== undefined ? `${count} flights found` : '';
+            bar.classList.remove('hidden');
+        }
+
+        function hideStatus() {
+            document.getElementById('status-bar').classList.add('hidden');
+        }
+
+        function getStatusFilters() {
+            const filters = [];
+            if (document.getElementById('filter-scheduled').checked) filters.push('scheduled');
+            if (document.getElementById('filter-estimated').checked) filters.push('estimated');
+            if (document.getElementById('filter-delayed').checked) filters.push('delayed');
+            if (document.getElementById('filter-unknown').checked) filters.push('unknown');
+            return filters;
+        }
+
+        function filterFlights(flights) {
+            const allowed = getStatusFilters();
+            return flights.filter(f => {
+                const s = f.status.toLowerCase();
+                if (allowed.includes(s)) return true;
+                if (allowed.includes('unknown') && !['scheduled', 'estimated', 'delayed', 'canceled', 'cancelled', 'diverted', 'landed'].includes(s)) return true;
+                return false;
+            });
+        }
+
+        async function searchFlights() {
+            const select = document.getElementById('airport-select');
+            const iata = select.value;
+            if (!iata) {
+                alert('Please select a departure airport.');
+                return;
+            }
+
+            const btn = document.getElementById('btn-search');
+            btn.disabled = true;
+            btn.textContent = 'Searching...';
+            showStatus(`Fetching departures from ${iata}...`);
+
+            try {
+                const resp = await fetch(`${API_BASE}/departures/${iata}`);
+                const data = await resp.json();
+
+                if (data.error) {
+                    showStatus(`Error: ${data.error}`);
+                    return;
+                }
+
+                const filtered = filterFlights(data.flights);
+                showStatus(`${data.airport_name} (${data.airport})`, filtered.length);
+                renderFlights({[iata]: {
+                    airport_name: data.airport_name,
+                    city: data.city,
+                    count: filtered.length,
+                    flights: filtered,
+                }});
+            } catch (e) {
+                showStatus(`Error: ${e.message}`);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Search Departures';
+            }
+        }
+
+        async function scanAll() {
+            const btn = document.getElementById('btn-scan-all');
+            btn.disabled = true;
+            btn.textContent = 'Scanning...';
+            showStatus('Scanning all major GCC airports (this may take a minute)...');
+
+            try {
+                const resp = await fetch(`${API_BASE}/scan`);
+                const data = await resp.json();
+
+                if (data.error) {
+                    showStatus(`Error: ${data.error}`);
+                    return;
+                }
+
+                // Apply filters
+                let totalCount = 0;
+                for (const airport in data) {
+                    data[airport].flights = filterFlights(data[airport].flights);
+                    data[airport].count = data[airport].flights.length;
+                    totalCount += data[airport].count;
+                }
+
+                showStatus('All major GCC airports scanned', totalCount);
+                renderFlights(data);
+            } catch (e) {
+                showStatus(`Error: ${e.message}`);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Scan All Major Airports';
+            }
+        }
+
+        function renderFlights(airportData) {
+            const container = document.getElementById('flights-container');
+            container.innerHTML = '';
+
+            for (const [airport, info] of Object.entries(airportData)) {
+                if (!info.flights || info.flights.length === 0) continue;
+
+                const section = document.createElement('div');
+                section.className = 'airport-section';
+                section.innerHTML = `
+                    <h2>${info.city} (${airport}) - ${info.airport_name}</h2>
+                    <p class="flight-summary">${info.count} evacuation flight(s) to non-GCC destinations</p>
+                `;
+
+                const table = document.createElement('table');
+                table.innerHTML = `
+                    <thead>
+                        <tr>
+                            <th>Flight</th>
+                            <th>Airline</th>
+                            <th>Destination</th>
+                            <th>Departure</th>
+                            <th>Status</th>
+                            <th>Aircraft</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                `;
+
+                const tbody = document.createElement('tbody');
+                for (const flight of info.flights) {
+                    const statusClass = getStatusClass(flight.status);
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="flight-number">${flight.flight_number}</td>
+                        <td>${flight.airline_name}</td>
+                        <td>
+                            <strong>${flight.destination_iata}</strong>
+                            <br><span class="dest-name">${flight.destination_name}</span>
+                        </td>
+                        <td>${flight.scheduled_departure}</td>
+                        <td><span class="status-badge ${statusClass}">${flight.status}</span></td>
+                        <td>${flight.aircraft_type || '-'}</td>
+                        <td>
+                            <a href="${flight.booking_url}" target="_blank" rel="noopener" class="btn-book">
+                                Book Now
+                            </a>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                }
+
+                table.appendChild(tbody);
+                section.appendChild(table);
+                container.appendChild(section);
+            }
+
+            if (container.children.length === 0) {
+                container.innerHTML = '<p class="no-flights">No evacuation flights found matching your filters. Try adjusting the status filters or selecting a different airport.</p>';
+            }
+        }
+
+        function getStatusClass(status) {
+            switch (status.toLowerCase()) {
+                case 'scheduled': return 'status-scheduled';
+                case 'estimated': return 'status-estimated';
+                case 'delayed': return 'status-delayed';
+                default: return 'status-unknown';
+            }
+        }
+
+        // Re-filter when checkboxes change
+        document.querySelectorAll('.filters input[type="checkbox"]').forEach(cb => {
+            cb.addEventListener('change', () => {
+                // If there's existing data, re-trigger the last search
+            });
+        });
+    </script>
+</body>
+</html>

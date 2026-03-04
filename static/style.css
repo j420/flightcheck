@@ -1,0 +1,346 @@
+/* GCC Evacuation Flight Tracker */
+
+:root {
+    --bg: #0a0e17;
+    --surface: #131927;
+    --surface-2: #1a2236;
+    --border: #2a3550;
+    --text: #e0e6f0;
+    --text-muted: #8892a8;
+    --accent: #3b82f6;
+    --accent-hover: #2563eb;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+    --success: #22c55e;
+    --scheduled: #3b82f6;
+    --estimated: #22c55e;
+    --delayed: #f59e0b;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+}
+
+header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 1.5rem 2rem;
+    text-align: center;
+}
+
+header h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.subtitle {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+}
+
+.warning {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    margin-top: 0.75rem;
+    display: inline-block;
+    font-size: 0.85rem;
+}
+
+main {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 1.5rem;
+}
+
+/* Controls */
+.controls {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.airport-selector {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.airport-selector label {
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.airport-selector select {
+    flex: 1;
+    min-width: 250px;
+    padding: 0.6rem 0.75rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+
+button {
+    padding: 0.6rem 1.25rem;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+#btn-search {
+    background: var(--accent);
+    color: white;
+}
+
+#btn-search:hover {
+    background: var(--accent-hover);
+}
+
+#btn-scan-all {
+    background: var(--danger);
+    color: white;
+}
+
+#btn-scan-all:hover {
+    background: #dc2626;
+}
+
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.filters {
+    display: flex;
+    gap: 1.25rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+}
+
+.filters label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.filters input[type="checkbox"] {
+    accent-color: var(--accent);
+}
+
+/* Status bar */
+.status-bar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1.25rem;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.status-bar.hidden {
+    display: none;
+}
+
+#status-text {
+    font-weight: 600;
+}
+
+#flight-count {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+/* Results */
+.airport-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+}
+
+.airport-section h2 {
+    padding: 1rem 1.25rem;
+    font-size: 1.15rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+}
+
+.flight-summary {
+    padding: 0.5rem 1.25rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--border);
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+thead th {
+    background: var(--surface-2);
+    padding: 0.65rem 1rem;
+    text-align: left;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+}
+
+tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+}
+
+tbody tr:hover {
+    background: var(--surface-2);
+}
+
+tbody tr:last-child {
+    border-bottom: none;
+}
+
+tbody td {
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+}
+
+.flight-number {
+    font-weight: 700;
+    font-family: 'SF Mono', 'Consolas', monospace;
+}
+
+.dest-name {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+/* Status badges */
+.status-badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.status-scheduled {
+    background: rgba(59, 130, 246, 0.15);
+    color: #93bbfd;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.status-estimated {
+    background: rgba(34, 197, 94, 0.15);
+    color: #86efac;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.status-delayed {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fcd34d;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.status-unknown {
+    background: rgba(136, 146, 168, 0.15);
+    color: var(--text-muted);
+    border: 1px solid rgba(136, 146, 168, 0.3);
+}
+
+/* Book button */
+.btn-book {
+    display: inline-block;
+    padding: 0.35rem 0.85rem;
+    background: var(--success);
+    color: #052e16;
+    text-decoration: none;
+    border-radius: 5px;
+    font-weight: 700;
+    font-size: 0.8rem;
+    transition: background 0.2s;
+    white-space: nowrap;
+}
+
+.btn-book:hover {
+    background: #16a34a;
+}
+
+.no-flights {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+/* Footer */
+footer {
+    text-align: center;
+    padding: 1.5rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    border-top: 1px solid var(--border);
+    margin-top: 2rem;
+}
+
+footer p + p {
+    margin-top: 0.25rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .airport-selector {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .airport-selector select {
+        min-width: unset;
+    }
+
+    .filters {
+        flex-wrap: wrap;
+        gap: 0.75rem;
+    }
+
+    table {
+        font-size: 0.8rem;
+    }
+
+    thead th, tbody td {
+        padding: 0.5rem;
+    }
+
+    .btn-book {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+    }
+}
