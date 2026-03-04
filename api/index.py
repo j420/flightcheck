@@ -1,27 +1,18 @@
 """
-Local development server for the Evacuation Flight Tracker.
-
-For Vercel deployment, the app runs from api/index.py instead.
-Run locally with: python app.py
+Vercel serverless Flask handler for the Evacuation Flight Tracker API.
 """
 
 import logging
-from flask import Flask, send_from_directory, jsonify, request
+from flask import Flask, jsonify, request
 
-from gcc_data import GCC_AIRPORTS, PRIMARY_DEPARTURE_AIRPORTS
-from flight_service import FlightService
+from .gcc_data import GCC_AIRPORTS, PRIMARY_DEPARTURE_AIRPORTS
+from .flight_service import FlightService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, static_folder="public", static_url_path="")
+app = Flask(__name__)
 flight_service = FlightService()
-
-
-@app.route("/")
-def index():
-    """Serve the static frontend."""
-    return send_from_directory("public", "index.html")
 
 
 @app.route("/api/departures/<airport_iata>")
@@ -85,7 +76,3 @@ def api_airports():
         },
         "primary": PRIMARY_DEPARTURE_AIRPORTS,
     })
-
-
-if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)

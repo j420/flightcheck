@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GCC Evacuation Flight Tracker</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/style.css">
 </head>
 <body>
     <header>
@@ -19,15 +19,28 @@
                 <label for="airport-select">Departure Airport:</label>
                 <select id="airport-select">
                     <option value="">-- Select Airport --</option>
-                    {% for iata in primary_airports %}
-                    <option value="{{ iata }}">{{ airports[iata].city }} ({{ iata }}) - {{ airports[iata].name }}</option>
-                    {% endfor %}
+                    <optgroup label="Major Hubs">
+                        <option value="DXB">Dubai (DXB) - Dubai International</option>
+                        <option value="AUH">Abu Dhabi (AUH) - Zayed International</option>
+                        <option value="DOH">Doha (DOH) - Hamad International</option>
+                        <option value="RUH">Riyadh (RUH) - King Khalid International</option>
+                        <option value="JED">Jeddah (JED) - King Abdulaziz International</option>
+                        <option value="KWI">Kuwait City (KWI) - Kuwait International</option>
+                        <option value="MCT">Muscat (MCT) - Muscat International</option>
+                        <option value="BAH">Manama (BAH) - Bahrain International</option>
+                        <option value="DMM">Dammam (DMM) - King Fahd International</option>
+                        <option value="SHJ">Sharjah (SHJ) - Sharjah International</option>
+                    </optgroup>
                     <optgroup label="Other GCC Airports">
-                    {% for iata, info in airports.items() %}
-                    {% if iata not in primary_airports %}
-                    <option value="{{ iata }}">{{ info.city }} ({{ iata }}) - {{ info.name }}</option>
-                    {% endif %}
-                    {% endfor %}
+                        <option value="DWC">Dubai (DWC) - Al Maktoum International</option>
+                        <option value="RKT">Ras Al Khaimah (RKT)</option>
+                        <option value="FJR">Fujairah (FJR)</option>
+                        <option value="MED">Medina (MED)</option>
+                        <option value="AHB">Abha (AHB)</option>
+                        <option value="TIF">Taif (TIF)</option>
+                        <option value="TUU">Tabuk (TUU)</option>
+                        <option value="GIZ">Jazan (GIZ)</option>
+                        <option value="SLL">Salalah (SLL)</option>
                     </optgroup>
                 </select>
                 <button id="btn-search" onclick="searchFlights()">Search Departures</button>
@@ -67,10 +80,6 @@
             bar.classList.remove('hidden');
         }
 
-        function hideStatus() {
-            document.getElementById('status-bar').classList.add('hidden');
-        }
-
         function getStatusFilters() {
             const filters = [];
             if (document.getElementById('filter-scheduled').checked) filters.push('scheduled');
@@ -89,6 +98,9 @@
                 return false;
             });
         }
+
+        // Store last fetched data for re-filtering
+        let lastData = null;
 
         async function searchFlights() {
             const select = document.getElementById('airport-select');
@@ -112,14 +124,12 @@
                     return;
                 }
 
-                const filtered = filterFlights(data.flights);
-                showStatus(`${data.airport_name} (${data.airport})`, filtered.length);
-                renderFlights({[iata]: {
+                lastData = {[iata]: {
                     airport_name: data.airport_name,
                     city: data.city,
-                    count: filtered.length,
-                    flights: filtered,
-                }});
+                    flights: data.flights,
+                }};
+                applyFiltersAndRender();
             } catch (e) {
                 showStatus(`Error: ${e.message}`);
             } finally {
@@ -143,22 +153,35 @@
                     return;
                 }
 
-                // Apply filters
-                let totalCount = 0;
-                for (const airport in data) {
-                    data[airport].flights = filterFlights(data[airport].flights);
-                    data[airport].count = data[airport].flights.length;
-                    totalCount += data[airport].count;
-                }
-
-                showStatus('All major GCC airports scanned', totalCount);
-                renderFlights(data);
+                lastData = data;
+                applyFiltersAndRender();
             } catch (e) {
                 showStatus(`Error: ${e.message}`);
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Scan All Major Airports';
             }
+        }
+
+        function applyFiltersAndRender() {
+            if (!lastData) return;
+
+            const filtered = {};
+            let totalCount = 0;
+            for (const [airport, info] of Object.entries(lastData)) {
+                const flights = filterFlights(info.flights);
+                filtered[airport] = {
+                    airport_name: info.airport_name,
+                    city: info.city,
+                    count: flights.length,
+                    flights: flights,
+                };
+                totalCount += flights.length;
+            }
+
+            const airportNames = Object.keys(filtered).join(', ');
+            showStatus(`Showing results for: ${airportNames}`, totalCount);
+            renderFlights(filtered);
         }
 
         function renderFlights(airportData) {
@@ -195,17 +218,17 @@
                     const statusClass = getStatusClass(flight.status);
                     const row = document.createElement('tr');
                     row.innerHTML = `
-                        <td class="flight-number">${flight.flight_number}</td>
-                        <td>${flight.airline_name}</td>
+                        <td class="flight-number">${esc(flight.flight_number)}</td>
+                        <td>${esc(flight.airline_name)}</td>
                         <td>
-                            <strong>${flight.destination_iata}</strong>
-                            <br><span class="dest-name">${flight.destination_name}</span>
+                            <strong>${esc(flight.destination_iata)}</strong>
+                            <br><span class="dest-name">${esc(flight.destination_name)}</span>
                         </td>
-                        <td>${flight.scheduled_departure}</td>
-                        <td><span class="status-badge ${statusClass}">${flight.status}</span></td>
-                        <td>${flight.aircraft_type || '-'}</td>
+                        <td>${esc(flight.scheduled_departure)}</td>
+                        <td><span class="status-badge ${statusClass}">${esc(flight.status)}</span></td>
+                        <td>${esc(flight.aircraft_type || '-')}</td>
                         <td>
-                            <a href="${flight.booking_url}" target="_blank" rel="noopener" class="btn-book">
+                            <a href="${esc(flight.booking_url)}" target="_blank" rel="noopener" class="btn-book">
                                 Book Now
                             </a>
                         </td>
@@ -223,6 +246,12 @@
             }
         }
 
+        function esc(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
         function getStatusClass(status) {
             switch (status.toLowerCase()) {
                 case 'scheduled': return 'status-scheduled';
@@ -234,9 +263,7 @@
 
         // Re-filter when checkboxes change
         document.querySelectorAll('.filters input[type="checkbox"]').forEach(cb => {
-            cb.addEventListener('change', () => {
-                // If there's existing data, re-trigger the last search
-            });
+            cb.addEventListener('change', applyFiltersAndRender);
         });
     </script>
 </body>
