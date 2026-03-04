@@ -3,28 +3,28 @@
    ============================================================ */
 
 :root {
-    --bg:          #f8fafc;
-    --surface:     #ffffff;
-    --surface-alt: #f1f5f9;
-    --border:      #e2e8f0;
-    --border-focus:#94a3b8;
-    --text:        #0f172a;
-    --text-2:      #475569;
-    --text-3:      #94a3b8;
-    --accent:      #3b82f6;
-    --accent-dark: #2563eb;
-    --accent-bg:   #eff6ff;
-    --danger:      #ef4444;
-    --danger-bg:   #fef2f2;
-    --warning:     #f59e0b;
-    --warning-bg:  #fffbeb;
-    --success:     #10b981;
-    --success-bg:  #ecfdf5;
+    --bg:          #0c1222;
+    --surface:     #141d30;
+    --surface-alt: #1a2540;
+    --border:      #243052;
+    --border-focus:#3b5998;
+    --text:        #e8ecf4;
+    --text-2:      #8d9bb5;
+    --text-3:      #576480;
+    --accent:      #60a5fa;
+    --accent-dark: #3b82f6;
+    --accent-bg:   rgba(96,165,250,0.12);
+    --danger:      #f87171;
+    --danger-bg:   rgba(248,113,113,0.1);
+    --warning:     #fbbf24;
+    --warning-bg:  rgba(251,191,36,0.1);
+    --success:     #34d399;
+    --success-bg:  rgba(52,211,153,0.1);
     --radius:      10px;
     --radius-sm:   6px;
-    --shadow-sm:   0 1px 2px rgba(0,0,0,0.04);
-    --shadow:      0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-    --shadow-md:   0 4px 6px rgba(0,0,0,0.04), 0 2px 4px rgba(0,0,0,0.03);
+    --shadow-sm:   0 1px 3px rgba(0,0,0,0.3);
+    --shadow:      0 2px 8px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.2);
+    --shadow-md:   0 4px 16px rgba(0,0,0,0.35), 0 2px 6px rgba(0,0,0,0.2);
     --transition:  150ms ease;
 }
 
@@ -47,6 +47,7 @@ body {
     position: sticky;
     top: 0;
     z-index: 50;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.3);
 }
 
 .topbar-inner {
@@ -111,12 +112,12 @@ body {
 
 .pill-live {
     background: var(--success-bg);
-    color: #065f46;
+    color: var(--success);
 }
 
 .pill-offline {
     background: var(--danger-bg);
-    color: #991b1b;
+    color: var(--danger);
 }
 
 .pill-muted {
@@ -147,8 +148,8 @@ body {
 
 .alert-strip {
     background: var(--warning-bg);
-    border-bottom: 1px solid #fde68a;
-    color: #92400e;
+    border-bottom: 1px solid rgba(251,191,36,0.2);
+    color: var(--warning);
     padding: 0.45rem 1rem;
     font-size: 0.78rem;
     font-weight: 500;
@@ -209,7 +210,7 @@ main {
 
 .tab:hover {
     color: var(--text);
-    background: rgba(0,0,0,0.02);
+    background: rgba(255,255,255,0.03);
 }
 
 .tab.active {
@@ -259,7 +260,7 @@ main {
 
 .input-field:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+    box-shadow: 0 0 0 3px rgba(96,165,250,0.15);
 }
 
 /* Buttons */
@@ -294,7 +295,7 @@ main {
 }
 
 .btn-danger:hover:not(:disabled) {
-    background: #dc2626;
+    background: #ef4444;
 }
 
 .btn-primary:disabled,
@@ -368,7 +369,7 @@ main {
 .status-pill.active[data-status="delayed"] {
     background: var(--warning-bg);
     border-color: var(--warning);
-    color: #92400e;
+    color: var(--warning);
 }
 
 .filter-meta {
@@ -436,8 +437,8 @@ main {
 
 .error-banner {
     background: var(--danger-bg);
-    border: 1px solid #fecaca;
-    color: #991b1b;
+    border: 1px solid rgba(248,113,113,0.25);
+    color: var(--danger);
     padding: 0.6rem 1rem;
     border-radius: var(--radius-sm);
     margin-bottom: 0.75rem;
@@ -544,7 +545,7 @@ thead th {
 
 .col-filter:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(59,130,246,0.1);
+    box-shadow: 0 0 0 2px rgba(96,165,250,0.15);
 }
 
 .col-filter::placeholder {
@@ -623,18 +624,18 @@ tbody td {
 }
 
 .status-scheduled {
-    background: #dbeafe;
-    color: #1e40af;
+    background: rgba(96,165,250,0.15);
+    color: #93bbfc;
 }
 
 .status-estimated {
-    background: #dcfce7;
-    color: #166534;
+    background: rgba(52,211,153,0.15);
+    color: #6ee7b7;
 }
 
 .status-delayed {
-    background: #fef3c7;
-    color: #92400e;
+    background: rgba(251,191,36,0.15);
+    color: #fcd34d;
 }
 
 .status-unknown {
@@ -644,23 +645,23 @@ tbody td {
 
 .status-cancelled {
     background: var(--danger-bg);
-    color: #991b1b;
+    color: var(--danger);
     text-decoration: line-through;
 }
 
 .flight-cancelled {
-    opacity: 0.55;
-    background: #fef2f233;
+    opacity: 0.5;
+    background: rgba(248,113,113,0.05);
 }
 
 .flight-cancelled:hover {
-    background: #fef2f244;
+    background: rgba(248,113,113,0.08);
 }
 
 .verified-tag {
     display: inline-block;
     font-size: 0.6rem;
-    color: #991b1b;
+    color: var(--danger);
     font-weight: 700;
     margin-left: 0.3rem;
 }
@@ -681,24 +682,24 @@ tbody td {
 
 .avail-yes {
     background: var(--success-bg);
-    color: #065f46;
+    color: var(--success);
 }
 
 .avail-verify {
     background: var(--warning-bg);
-    color: #92400e;
+    color: var(--warning);
     text-decoration: none;
     cursor: pointer;
     transition: background var(--transition);
 }
 
 .avail-verify:hover {
-    background: #fef3c7;
+    background: rgba(251,191,36,0.18);
 }
 
 .avail-checking {
     background: var(--accent-bg);
-    color: #1e40af;
+    color: var(--accent);
     animation: pulse 1.5s infinite;
 }
 
@@ -730,16 +731,16 @@ tbody td {
 }
 
 .btn-google  { background: #4285f4; }
-.btn-google:hover  { background: #3367d6; }
+.btn-google:hover  { background: #5a9bf5; }
 
-.btn-kayak   { background: #ff690f; }
-.btn-kayak:hover   { background: #e65d0c; }
+.btn-kayak   { background: #ff7a2e; }
+.btn-kayak:hover   { background: #ff9555; }
 
-.btn-sky     { background: #0770e3; }
-.btn-sky:hover     { background: #055ebf; }
+.btn-sky     { background: #0790f5; }
+.btn-sky:hover     { background: #38a8fc; }
 
-.btn-airline { background: var(--text-2); }
-.btn-airline:hover { background: var(--text); }
+.btn-airline { background: var(--text-3); }
+.btn-airline:hover { background: var(--text-2); }
 
 /* ---- Pagination ---- */
 
