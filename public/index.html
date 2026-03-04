@@ -60,9 +60,17 @@
         </section>
 
         <section id="status-bar" class="status-bar hidden">
-            <span id="status-text">Loading...</span>
-            <span id="flight-count"></span>
+            <div class="status-left">
+                <span id="status-text">Loading...</span>
+                <span id="flight-count"></span>
+            </div>
+            <div class="status-right">
+                <span id="last-updated"></span>
+                <span id="auto-refresh-info"></span>
+            </div>
         </section>
+
+        <div id="error-banner" class="error-banner hidden"></div>
 
         <section id="results" class="results">
             <div id="flights-container"></div>
@@ -76,6 +84,53 @@
 
     <script>
         const API_BASE = '/api';
+        const AUTO_REFRESH_SECONDS = 120;
+        const FETCH_TIMEOUT_MS = 15000;
+        const MAX_RETRIES = 2;
+
+        let autoRefreshTimer = null;
+        let countdownTimer = null;
+        let countdownSeconds = 0;
+        let lastFetchedAt = null;
+        let lastMode = null; // 'search' or 'scan'
+        let lastSearchIata = null;
+
+        // ---- Fetch with timeout and retry ----
+
+        async function fetchWithTimeout(url, timeoutMs = FETCH_TIMEOUT_MS) {
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                const resp = await fetch(url, { signal: controller.signal });
+                clearTimeout(id);
+                return resp;
+            } catch (e) {
+                clearTimeout(id);
+                throw e;
+            }
+        }
+
+        async function fetchWithRetry(url, retries = MAX_RETRIES) {
+            let lastErr;
+            for (let i = 0; i <= retries; i++) {
+                try {
+                    const resp = await fetchWithTimeout(url);
+                    if (resp.ok) return resp;
+                    // Non-retryable HTTP errors (4xx)
+                    if (resp.status >= 400 && resp.status < 500) return resp;
+                    throw new Error(`HTTP ${resp.status}`);
+                } catch (e) {
+                    lastErr = e;
+                    if (i < retries) {
+                        const wait = 1000 * (2 ** i);
+                        await new Promise(r => setTimeout(r, wait));
+                    }
+                }
+            }
+            throw lastErr;
+        }
+
+        // ---- Status and errors ----
 
         function showStatus(msg, count) {
             const bar = document.getElementById('status-bar');
@@ -83,6 +138,64 @@
             document.getElementById('flight-count').textContent = count !== undefined ? `${count} flights found` : '';
             bar.classList.remove('hidden');
         }
+
+        function updateTimestamp() {
+            const el = document.getElementById('last-updated');
+            if (lastFetchedAt) {
+                el.textContent = `Updated: ${lastFetchedAt}`;
+            }
+        }
+
+        function showError(msg) {
+            const banner = document.getElementById('error-banner');
+            banner.textContent = msg;
+            banner.classList.remove('hidden');
+        }
+
+        function clearError() {
+            document.getElementById('error-banner').classList.add('hidden');
+        }
+
+        // ---- Auto-refresh ----
+
+        function startAutoRefresh() {
+            stopAutoRefresh();
+            countdownSeconds = AUTO_REFRESH_SECONDS;
+            updateCountdown();
+
+            countdownTimer = setInterval(() => {
+                countdownSeconds--;
+                if (countdownSeconds <= 0) {
+                    stopAutoRefresh();
+                    triggerRefresh();
+                } else {
+                    updateCountdown();
+                }
+            }, 1000);
+        }
+
+        function stopAutoRefresh() {
+            if (countdownTimer) clearInterval(countdownTimer);
+            countdownTimer = null;
+            const el = document.getElementById('auto-refresh-info');
+            if (el) el.textContent = '';
+        }
+
+        function updateCountdown() {
+            const el = document.getElementById('auto-refresh-info');
+            if (el) el.textContent = `Auto-refresh in ${countdownSeconds}s`;
+        }
+
+        function triggerRefresh() {
+            if (lastMode === 'scan') {
+                scanAll();
+            } else if (lastMode === 'search' && lastSearchIata) {
+                document.getElementById('airport-select').value = lastSearchIata;
+                searchFlights();
+            }
+        }
+
+        // ---- Filters ----
 
         function getStatusFilters() {
             const filters = [];
@@ -103,7 +216,6 @@
             });
         }
 
-        // Column filter values
         const columnFilters = {
             flight: '',
             airline: '',
@@ -133,7 +245,8 @@
             applyFiltersAndRender();
         }
 
-        // Store last fetched data for re-filtering
+        // ---- Data ----
+
         let lastData = null;
 
         async function searchFlights() {
@@ -144,37 +257,49 @@
                 return;
             }
 
+            clearError();
+            stopAutoRefresh();
+            lastMode = 'search';
+            lastSearchIata = iata;
+
             const btn = document.getElementById('btn-search');
             btn.disabled = true;
             btn.textContent = 'Searching...';
             showStatus(`Fetching departures from ${iata}...`);
 
             try {
-                const resp = await fetch(`${API_BASE}/departures/${iata}`);
+                const resp = await fetchWithRetry(`${API_BASE}/departures/${iata}`);
                 const data = await resp.json();
 
                 if (data.error) {
-                    showStatus(`Error: ${data.error}`);
-                    return;
+                    showError(`Error fetching ${iata}: ${data.error}`);
+                    if (!lastData) showStatus('Failed to load. Retrying automatically...');
+                } else {
+                    lastData = {[iata]: {
+                        airport_name: data.airport_name,
+                        city: data.city,
+                        flights: data.flights,
+                    }};
+                    lastFetchedAt = data.fetched_at || new Date().toISOString();
+                    updateTimestamp();
+                    applyFiltersAndRender();
                 }
-
-                lastData = {[iata]: {
-                    airport_name: data.airport_name,
-                    city: data.city,
-                    flights: data.flights,
-                }};
-                applyFiltersAndRender();
             } catch (e) {
-                showStatus(`Error: ${e.message}`);
+                showError(`Network error: ${e.message}. Will retry automatically.`);
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Search Departures';
+                startAutoRefresh();
             }
         }
 
         const MAJOR_AIRPORTS = ['DXB','AUH','DOH','RUH','JED','KWI','MCT','BAH','DMM','SHJ'];
 
         async function scanAll() {
+            clearError();
+            stopAutoRefresh();
+            lastMode = 'scan';
+
             const btn = document.getElementById('btn-scan-all');
             btn.disabled = true;
             btn.textContent = 'Scanning...';
@@ -182,12 +307,13 @@
             document.getElementById('flights-container').innerHTML = '';
 
             let completed = 0;
+            let failed = 0;
             const total = MAJOR_AIRPORTS.length;
             showStatus(`Scanning airports... 0/${total} done`);
 
             const promises = MAJOR_AIRPORTS.map(async (iata) => {
                 try {
-                    const resp = await fetch(`${API_BASE}/departures/${iata}`);
+                    const resp = await fetchWithRetry(`${API_BASE}/departures/${iata}`);
                     const data = await resp.json();
                     if (!data.error && data.flights) {
                         lastData[iata] = {
@@ -195,13 +321,16 @@
                             city: data.city,
                             flights: data.flights,
                         };
+                        if (data.fetched_at) lastFetchedAt = data.fetched_at;
+                    } else {
+                        failed++;
                     }
                 } catch (e) {
                     console.error(`Failed to fetch ${iata}:`, e);
+                    failed++;
                 }
                 completed++;
                 showStatus(`Scanning airports... ${completed}/${total} done`);
-                // Progressive render after each airport completes
                 applyFiltersAndRender();
             });
 
@@ -209,7 +338,14 @@
 
             btn.disabled = false;
             btn.textContent = 'Scan All Major Airports';
+
+            if (failed > 0) {
+                showError(`${failed} airport(s) failed to load. Showing available data. Will auto-refresh.`);
+            }
+
+            updateTimestamp();
             applyFiltersAndRender();
+            startAutoRefresh();
         }
 
         function applyFiltersAndRender() {

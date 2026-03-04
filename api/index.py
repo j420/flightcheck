@@ -1,11 +1,13 @@
 """
 Vercel serverless Flask handler for the Evacuation Flight Tracker API.
 
-Vercel runs each file in api/ as a standalone serverless function,
-so we use absolute imports (Vercel adds api/ to sys.path).
+CRITICAL: This API supports emergency evacuation operations.
+Every endpoint includes error isolation and timestamps.
 """
 
 import logging
+from datetime import datetime, timezone
+
 from flask import Flask, jsonify, request
 
 from gcc_data import GCC_AIRPORTS, PRIMARY_DEPARTURE_AIRPORTS
@@ -16,6 +18,10 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 flight_service = FlightService()
+
+
+def _utc_now():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 @app.route("/api/departures/<airport_iata>")
@@ -32,11 +38,16 @@ def api_departures(airport_iata: str):
             "airport_name": GCC_AIRPORTS[airport_iata]["name"],
             "city": GCC_AIRPORTS[airport_iata]["city"],
             "count": len(flights),
+            "fetched_at": _utc_now(),
             "flights": [f.to_dict() for f in flights],
         })
     except Exception as e:
         logger.error(f"Error fetching departures for {airport_iata}: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": f"Failed to fetch {airport_iata}. Please retry.",
+            "airport": airport_iata,
+            "fetched_at": _utc_now(),
+        }), 500
 
 
 @app.route("/api/scan")
@@ -59,10 +70,10 @@ def api_scan():
                 "count": len(flights),
                 "flights": [f.to_dict() for f in flights],
             }
-        return jsonify(output)
+        return jsonify({"fetched_at": _utc_now(), "airports": output})
     except Exception as e:
         logger.error(f"Error scanning airports: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "fetched_at": _utc_now()}), 500
 
 
 @app.route("/api/airports")
