@@ -36,6 +36,33 @@ header {
     border-bottom: 1px solid var(--border);
     padding: 1.5rem 2rem;
     text-align: center;
+    position: relative;
+}
+
+.home-link {
+    position: absolute;
+    left: 1.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--accent);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    transition: background 0.2s, color 0.2s;
+}
+
+.home-link:hover {
+    background: var(--bg);
+    color: var(--accent-hover);
+}
+
+.home-icon {
+    width: 24px;
+    height: 24px;
 }
 
 header h1 {
@@ -493,6 +520,29 @@ tbody td {
     border: 1px solid #d1d5db;
 }
 
+.status-cancelled {
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+    text-decoration: line-through;
+}
+
+.flight-cancelled {
+    opacity: 0.6;
+    background: #fef2f2;
+}
+
+.flight-cancelled:hover {
+    background: #fef2f2;
+}
+
+.verified-tag {
+    font-size: 0.65rem;
+    color: #991b1b;
+    font-weight: 600;
+    font-style: italic;
+}
+
 /* Availability */
 .avail-cell {
     white-space: nowrap;
@@ -672,6 +722,43 @@ footer p + p {
 
 /* Responsive */
 @media (max-width: 768px) {
+    header {
+        padding: 1rem;
+        padding-left: 3rem;
+    }
+
+    .home-link {
+        left: 0.5rem;
+        width: 32px;
+        height: 32px;
+    }
+
+    .home-icon {
+        width: 20px;
+        height: 20px;
+    }
+
+    header h1 {
+        font-size: 1.25rem;
+    }
+
+    .subtitle {
+        font-size: 0.8rem;
+    }
+
+    .warning {
+        font-size: 0.75rem;
+        padding: 0.4rem 0.75rem;
+    }
+
+    main {
+        padding: 0.75rem;
+    }
+
+    .controls {
+        padding: 0.75rem;
+    }
+
     .airport-selector,
     .dest-search {
         flex-direction: column;
@@ -681,23 +768,149 @@ footer p + p {
     .airport-selector select,
     .dest-search input[type="text"] {
         min-width: unset;
+        width: 100%;
+    }
+
+    .airport-selector label,
+    .dest-search label {
+        font-size: 0.85rem;
+    }
+
+    button {
+        width: 100%;
+        padding: 0.75rem;
     }
 
     .filters {
         flex-wrap: wrap;
-        gap: 0.75rem;
+        gap: 0.5rem;
+    }
+
+    .filters label {
+        font-size: 0.78rem;
+    }
+
+    .filter-divider {
+        display: none;
+    }
+
+    .dropdown-filter {
+        width: 100%;
+    }
+
+    .dropdown-filter-btn {
+        width: 100%;
+        text-align: left;
+        padding: 0.5rem 0.6rem;
+    }
+
+    .dropdown-filter-panel {
+        position: fixed;
+        top: auto;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        max-height: 50vh;
+        border-radius: 12px 12px 0 0;
+        box-shadow: 0 -4px 20px rgba(0,0,0,0.2);
+        z-index: 1000;
+    }
+
+    .status-bar {
+        flex-direction: column;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        text-align: center;
+    }
+
+    .status-left, .status-right {
+        justify-content: center;
+    }
+
+    .airport-section h2 {
+        font-size: 1rem;
+        padding: 0.75rem;
+    }
+
+    .flight-summary {
+        font-size: 0.78rem;
+        padding: 0.4rem 0.75rem;
+    }
+
+    /* Make table horizontally scrollable on mobile */
+    .airport-section {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
     }
 
     table {
-        font-size: 0.8rem;
+        font-size: 0.78rem;
+        min-width: 700px;
     }
 
     thead th, tbody td {
-        padding: 0.5rem;
+        padding: 0.4rem 0.5rem;
+        white-space: nowrap;
+    }
+
+    .col-filter {
+        font-size: 0.7rem;
+        padding: 0.25rem 0.35rem;
     }
 
     .btn-book {
         padding: 0.25rem 0.5rem;
+        font-size: 0.7rem;
+    }
+
+    .btn-airline {
+        padding: 0.2rem 0.4rem;
+        font-size: 0.65rem;
+    }
+
+    .action-cell {
+        gap: 0.2rem;
+    }
+
+    .pagination {
+        padding: 0.5rem;
+        gap: 0.5rem;
+    }
+
+    .btn-page {
+        padding: 0.35rem 0.75rem;
         font-size: 0.75rem;
+    }
+
+    .page-info {
+        font-size: 0.78rem;
+    }
+
+    footer {
+        padding: 1rem;
+        font-size: 0.7rem;
+    }
+}
+
+/* Small phones */
+@media (max-width: 480px) {
+    header h1 {
+        font-size: 1.1rem;
+    }
+
+    .controls {
+        padding: 0.5rem;
+    }
+
+    main {
+        padding: 0.5rem;
+    }
+
+    .filters label {
+        font-size: 0.72rem;
+    }
+
+    .filters select {
+        font-size: 0.78rem;
     }
 }

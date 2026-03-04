@@ -12,6 +12,12 @@
 </head>
 <body>
     <header>
+        <a href="/" class="home-link" title="Return to home page">
+            <svg class="home-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+            </svg>
+        </a>
         <h1>GCC Evacuation Flight Tracker</h1>
         <p class="subtitle">Live commercial flights departing GCC airports to non-GCC destinations</p>
         <p class="warning">Flight data may lag behind airline updates. Always verify status and availability directly with the airline before booking.</p>
@@ -151,6 +157,14 @@
         let availabilityChecking = false;
         let availRefreshTimer = null;
         const AVAIL_REFRESH_MS = 120000; // refresh availability every 2 minutes
+
+        // AviationStack verification state (cancellation detection)
+        // Key: flight_number, Value: { status, is_cancelled, source }
+        const verificationCache = {};
+        let verificationEnabled = false;
+        let verificationChecking = false;
+        let verifyRefreshTimer = null;
+        const VERIFY_REFRESH_MS = 900000; // 15 minutes — conserve free tier quota
 
         // ---- Fetch with timeout and retry ----
 
@@ -345,7 +359,8 @@
             const list = document.getElementById(type === 'airline' ? 'airline-filter-list' : 'dest-filter-list');
             const boxes = list.querySelectorAll('input[type="checkbox"]');
             const checked = [...boxes].filter(cb => cb.checked).map(cb => cb.value);
-            const allChecked = checked.length === boxes.length;
+            const allChecked = boxes.length > 0 && checked.length === boxes.length;
+            const noneChecked = checked.length === 0;
 
             if (type === 'airline') {
                 selectedAirlines = allChecked ? null : new Set(checked);
@@ -353,13 +368,15 @@
                 selectedDests = allChecked ? null : new Set(checked);
             }
 
-            // Update button label to show count
+            // Update button label to show selection state
             const btn = document.querySelector(`#${type === 'airline' ? 'airline' : 'dest'}-filter-wrapper .dropdown-filter-btn`);
             const label = type === 'airline' ? 'Airlines' : 'Destinations';
-            if (allChecked || checked.length === 0) {
-                btn.innerHTML = `${label} <span class="dropdown-arrow">&#9662;</span>`;
+            if (allChecked) {
+                btn.innerHTML = `${label} (All) <span class="dropdown-arrow">&#9662;</span>`;
+            } else if (noneChecked) {
+                btn.innerHTML = `${label} (None) <span class="dropdown-arrow">&#9662;</span>`;
             } else {
-                btn.innerHTML = `${label} (${checked.length}) <span class="dropdown-arrow">&#9662;</span>`;
+                btn.innerHTML = `${label} (${checked.length}/${boxes.length}) <span class="dropdown-arrow">&#9662;</span>`;
             }
 
             for (const k in currentPage) currentPage[k] = 1;
@@ -404,6 +421,25 @@
                 const checked = !prevDests || prevDests.has(iata) ? 'checked' : '';
                 return `<label><input type="checkbox" value="${esc(iata)}" ${checked} onchange="onDropdownFilterChange('dest')"> ${esc(iata)} — ${esc(name)}</label>`;
             }).join('');
+
+            // Sync button labels with current checkbox state (without re-triggering filter)
+            syncDropdownLabel('airline');
+            syncDropdownLabel('dest');
+        }
+
+        function syncDropdownLabel(type) {
+            const list = document.getElementById(type === 'airline' ? 'airline-filter-list' : 'dest-filter-list');
+            const boxes = list.querySelectorAll('input[type="checkbox"]');
+            const checked = [...boxes].filter(cb => cb.checked);
+            const btn = document.querySelector(`#${type === 'airline' ? 'airline' : 'dest'}-filter-wrapper .dropdown-filter-btn`);
+            const label = type === 'airline' ? 'Airlines' : 'Destinations';
+            if (boxes.length === 0 || checked.length === boxes.length) {
+                btn.innerHTML = `${label} (All) <span class="dropdown-arrow">&#9662;</span>`;
+            } else if (checked.length === 0) {
+                btn.innerHTML = `${label} (None) <span class="dropdown-arrow">&#9662;</span>`;
+            } else {
+                btn.innerHTML = `${label} (${checked.length}/${boxes.length}) <span class="dropdown-arrow">&#9662;</span>`;
+            }
         }
 
         // ---- Data fetching ----
@@ -437,6 +473,7 @@
                     rebuildDropdownFilters();
                     applyFiltersAndRender();
                     checkAvailabilityForLoadedFlights();
+                    verifyLoadedFlights();
                 }
             } catch (e) {
                 showError(`Network error: ${e.message}. Will retry automatically.`);
@@ -497,6 +534,7 @@
             updateTimestamp();
             applyFiltersAndRender();
             checkAvailabilityForLoadedFlights();
+            verifyLoadedFlights();
             startAutoRefresh();
         }
 
@@ -603,6 +641,7 @@
                         rebuildDropdownFilters();
                         applyFiltersAndRender();
                         checkAvailabilityForLoadedFlights();
+                        verifyLoadedFlights();
                     }
                 }
             } catch (e) {
@@ -804,19 +843,25 @@
         function buildTbody(pageFlights, airport) {
             const tbody = document.createElement('tbody');
             for (const flight of pageFlights) {
-                const statusClass = getStatusClass(flight.status);
+                const fn = (flight.flight_number || '').trim().toUpperCase();
+                const verification = verificationCache[fn];
+                const isCancelled = verification && verification.is_cancelled;
+
+                const statusClass = isCancelled ? 'status-cancelled' : getStatusClass(flight.status);
+                const statusText = isCancelled ? 'Cancelled' : flight.status;
                 const depDate = flight.scheduled_departure.split(' ')[0] || '';
                 const gfUrl = buildGoogleFlightsUrl(airport, flight.destination_iata, depDate);
                 const airlineUrl = buildAirlineUrl(flight.airline_icao, airport, flight.destination_iata, depDate);
                 const kayakUrl = buildKayakUrl(airport, flight.destination_iata, depDate);
                 const skyscannerUrl = buildSkyscannerUrl(airport, flight.destination_iata, depDate);
                 const row = document.createElement('tr');
+                if (isCancelled) row.classList.add('flight-cancelled');
                 row.innerHTML = `
                     <td class="flight-number">${esc(flight.flight_number)}</td>
                     <td>${esc(flight.airline_name)}</td>
                     <td><strong>${esc(flight.destination_iata)}</strong><br><span class="dest-name">${esc(flight.destination_name)}</span></td>
                     <td>${esc(flight.scheduled_departure)}</td>
-                    <td><span class="status-badge ${statusClass}">${esc(flight.status)}</span></td>
+                    <td><span class="status-badge ${statusClass}">${esc(statusText)}</span>${isCancelled ? '<br><span class="verified-tag">Verified</span>' : ''}</td>
                     <td>${esc(flight.aircraft_type || '-')}</td>
                     <td class="avail-cell">${getAvailabilityHtml(airport, flight)}</td>
                     <td class="action-cell">
@@ -1108,6 +1153,77 @@
 
         // Check availability status on load, then auto-check when flights are loaded
         checkAvailabilityStatus();
+
+        // ---- AviationStack flight verification (cancellation detection) ----
+
+        async function checkVerificationStatus() {
+            try {
+                const resp = await fetch(`${API_BASE}/verify/status`);
+                if (resp.ok) {
+                    const data = await safeJson(resp);
+                    verificationEnabled = data.configured;
+                    if (verificationEnabled) {
+                        startVerificationRefresh();
+                    }
+                }
+            } catch (e) {
+                // Verification not available — non-critical
+            }
+        }
+
+        function startVerificationRefresh() {
+            if (verifyRefreshTimer) clearInterval(verifyRefreshTimer);
+            verifyRefreshTimer = setInterval(() => {
+                verifyLoadedFlights();
+            }, VERIFY_REFRESH_MS);
+        }
+
+        async function verifyLoadedFlights() {
+            if (!verificationEnabled || !lastData || verificationChecking) return;
+            verificationChecking = true;
+
+            // Collect unique flight numbers from loaded data
+            const flightNumbers = new Set();
+            for (const info of Object.values(lastData)) {
+                for (const f of info.flights) {
+                    if (f.flight_number && f.flight_number !== 'N/A') {
+                        flightNumbers.add(f.flight_number.trim().toUpperCase());
+                    }
+                }
+            }
+
+            if (flightNumbers.size === 0) {
+                verificationChecking = false;
+                return;
+            }
+
+            // Batch in chunks of 10 (AviationStack free tier limit)
+            const allFns = [...flightNumbers];
+            for (let i = 0; i < allFns.length; i += 10) {
+                const chunk = allFns.slice(i, i + 10);
+                try {
+                    const resp = await fetch(`${API_BASE}/verify/batch`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ flight_numbers: chunk }),
+                    });
+                    if (resp.ok) {
+                        const data = await safeJson(resp);
+                        for (const [fn, result] of Object.entries(data.results || {})) {
+                            verificationCache[fn] = result;
+                        }
+                    }
+                } catch (e) {
+                    console.error('Flight verification batch failed:', e);
+                }
+            }
+
+            verificationChecking = false;
+            // Re-render to show cancelled flight warnings
+            applyFiltersAndRender();
+        }
+
+        checkVerificationStatus();
 
         // ---- Connection and reliability monitoring ----
 
