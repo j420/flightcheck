@@ -70,6 +70,27 @@
                     <option value="unknown">Unknown</option>
                 </select>
                 <span class="filter-divider"></span>
+                <div class="dropdown-filter" id="airline-filter-wrapper">
+                    <button type="button" class="dropdown-filter-btn" onclick="toggleDropdown('airline')">Airlines <span class="dropdown-arrow">&#9662;</span></button>
+                    <div class="dropdown-filter-panel hidden" id="airline-filter-panel">
+                        <div class="dropdown-filter-actions">
+                            <a href="#" onclick="selectAllDropdown('airline', true); return false;">All</a>
+                            <a href="#" onclick="selectAllDropdown('airline', false); return false;">None</a>
+                        </div>
+                        <div class="dropdown-filter-list" id="airline-filter-list"></div>
+                    </div>
+                </div>
+                <div class="dropdown-filter" id="dest-filter-wrapper">
+                    <button type="button" class="dropdown-filter-btn" onclick="toggleDropdown('dest')">Destinations <span class="dropdown-arrow">&#9662;</span></button>
+                    <div class="dropdown-filter-panel hidden" id="dest-filter-panel">
+                        <div class="dropdown-filter-actions">
+                            <a href="#" onclick="selectAllDropdown('dest', true); return false;">All</a>
+                            <a href="#" onclick="selectAllDropdown('dest', false); return false;">None</a>
+                        </div>
+                        <div class="dropdown-filter-list" id="dest-filter-list"></div>
+                    </div>
+                </div>
+                <span class="filter-divider"></span>
                 <span id="avail-status-text" class="avail-status"></span>
             </div>
         </section>
@@ -293,6 +314,98 @@
             }, 150);
         }
 
+        // ---- Airline & Destination dropdown checkbox filters ----
+
+        // Sets of selected values (null = all selected, i.e. no filter active)
+        let selectedAirlines = null; // null means "all"
+        let selectedDests = null;    // null means "all"
+
+        function toggleDropdown(type) {
+            const panel = document.getElementById(type === 'airline' ? 'airline-filter-panel' : 'dest-filter-panel');
+            const wasHidden = panel.classList.contains('hidden');
+            // Close all panels first
+            document.querySelectorAll('.dropdown-filter-panel').forEach(p => p.classList.add('hidden'));
+            if (wasHidden) panel.classList.remove('hidden');
+        }
+
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.dropdown-filter')) {
+                document.querySelectorAll('.dropdown-filter-panel').forEach(p => p.classList.add('hidden'));
+            }
+        });
+
+        function selectAllDropdown(type, checked) {
+            const list = document.getElementById(type === 'airline' ? 'airline-filter-list' : 'dest-filter-list');
+            list.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = checked; });
+            onDropdownFilterChange(type);
+        }
+
+        function onDropdownFilterChange(type) {
+            const list = document.getElementById(type === 'airline' ? 'airline-filter-list' : 'dest-filter-list');
+            const boxes = list.querySelectorAll('input[type="checkbox"]');
+            const checked = [...boxes].filter(cb => cb.checked).map(cb => cb.value);
+            const allChecked = checked.length === boxes.length;
+
+            if (type === 'airline') {
+                selectedAirlines = allChecked ? null : new Set(checked);
+            } else {
+                selectedDests = allChecked ? null : new Set(checked);
+            }
+
+            // Update button label to show count
+            const btn = document.querySelector(`#${type === 'airline' ? 'airline' : 'dest'}-filter-wrapper .dropdown-filter-btn`);
+            const label = type === 'airline' ? 'Airlines' : 'Destinations';
+            if (allChecked || checked.length === 0) {
+                btn.innerHTML = `${label} <span class="dropdown-arrow">&#9662;</span>`;
+            } else {
+                btn.innerHTML = `${label} (${checked.length}) <span class="dropdown-arrow">&#9662;</span>`;
+            }
+
+            for (const k in currentPage) currentPage[k] = 1;
+            applyFiltersAndRender();
+        }
+
+        function applyDropdownFilters(flights) {
+            return flights.filter(f => {
+                if (selectedAirlines && !selectedAirlines.has(f.airline_name)) return false;
+                if (selectedDests && !selectedDests.has(f.destination_iata)) return false;
+                return true;
+            });
+        }
+
+        // Rebuild the airline & destination checkbox lists from current data
+        function rebuildDropdownFilters() {
+            if (!lastData) return;
+
+            const airlines = new Set();
+            const dests = new Map(); // iata -> name
+
+            for (const info of Object.values(lastData)) {
+                for (const f of info.flights) {
+                    if (f.airline_name) airlines.add(f.airline_name);
+                    if (f.destination_iata) dests.set(f.destination_iata, f.destination_name || f.destination_iata);
+                }
+            }
+
+            // Build airline checkboxes
+            const airlineList = document.getElementById('airline-filter-list');
+            const prevAirlines = selectedAirlines;
+            airlineList.innerHTML = [...airlines].sort().map(name => {
+                const checked = !prevAirlines || prevAirlines.has(name) ? 'checked' : '';
+                return `<label><input type="checkbox" value="${esc(name)}" ${checked} onchange="onDropdownFilterChange('airline')"> ${esc(name)}</label>`;
+            }).join('');
+
+            // Build destination checkboxes
+            const destList = document.getElementById('dest-filter-list');
+            const prevDests = selectedDests;
+            const sortedDests = [...dests.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+            destList.innerHTML = sortedDests.map(([iata, name]) => {
+                const checked = !prevDests || prevDests.has(iata) ? 'checked' : '';
+                return `<label><input type="checkbox" value="${esc(iata)}" ${checked} onchange="onDropdownFilterChange('dest')"> ${esc(iata)} — ${esc(name)}</label>`;
+            }).join('');
+        }
+
         // ---- Data fetching ----
 
         async function searchFlights() {
@@ -321,6 +434,7 @@
                     currentPage[iata] = 1;
                     lastFetchedAt = data.fetched_at || new Date().toISOString();
                     updateTimestamp();
+                    rebuildDropdownFilters();
                     applyFiltersAndRender();
                     checkAvailabilityForLoadedFlights();
                 }
@@ -345,6 +459,8 @@
             btn.textContent = 'Scanning...';
             lastData = {};
             lastFiltered = null;
+            selectedAirlines = null;
+            selectedDests = null;
             // Clear all existing airport sections for a fresh scan
             const fc = document.getElementById('flights-container');
             fc.querySelectorAll('[data-airport]').forEach(el => el.remove());
@@ -370,6 +486,7 @@
                 }
                 completed++;
                 showStatus(`Scanning airports... ${completed}/${total} done`);
+                rebuildDropdownFilters();
                 applyFiltersAndRender();
             });
 
@@ -451,6 +568,8 @@
             btn.disabled = true;
             btn.textContent = 'Searching...';
             lastData = {};
+            selectedAirlines = null;
+            selectedDests = null;
             lastFiltered = null;
             const fc = document.getElementById('flights-container');
             fc.querySelectorAll('[data-airport]').forEach(el => el.remove());
@@ -481,6 +600,7 @@
                     if (data.total_flights === 0) {
                         showStatus(`No flights found to ${destCode} from any GCC airport`, 0);
                     } else {
+                        rebuildDropdownFilters();
                         applyFiltersAndRender();
                         checkAvailabilityForLoadedFlights();
                     }
@@ -535,6 +655,7 @@
             for (const [airport, info] of Object.entries(lastData)) {
                 let flights = filterFlights(info.flights);
                 flights = applyColumnFilters(flights);
+                flights = applyDropdownFilters(flights);
                 flights = applyAvailabilityFilter(flights, airport);
                 filtered[airport] = {
                     airport_name: info.airport_name,
