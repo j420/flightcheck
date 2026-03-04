@@ -92,7 +92,7 @@
     </main>
 
     <footer>
-        <p>Data sourced from FlightRadar24. For educational/emergency use only.</p>
+        <p>Data sourced from FlightRadar24 &amp; Google Flights. For educational/emergency use only.</p>
         <p>Always verify availability directly on the airline website before booking.</p>
     </footer>
 
@@ -536,11 +536,14 @@
             if (avail.available) {
                 const seatText = avail.seats_available
                     ? `${avail.seats_available}${avail.seats_available >= 9 ? '+' : ''} seats`
-                    : 'Seats Open';
+                    : 'Bookable';
                 const price = avail.cheapest
                     ? `<span class="avail-price">from ${esc(avail.cheapest.currency)} ${esc(avail.cheapest.price)}</span>`
                     : '';
-                return `<span class="avail-badge avail-yes">${seatText}</span>${price}`;
+                const srcTag = avail.source === 'google_flights'
+                    ? ' <span class="avail-source" title="via Google Flights">GF</span>'
+                    : '';
+                return `<span class="avail-badge avail-yes">${seatText}</span>${price}${srcTag}`;
             }
             return '<span class="avail-badge avail-no">Sold Out</span>';
         }
@@ -740,12 +743,15 @@
 
         // ---- Seat availability checking ----
 
+        let availabilitySource = null; // 'amadeus' or 'google_flights'
+
         async function checkAvailabilityStatus() {
             try {
                 const resp = await fetch(`${API_BASE}/availability/status`);
                 if (resp.ok) {
                     const data = await safeJson(resp);
                     availabilityEnabled = data.configured;
+                    availabilitySource = data.source || null;
                     if (availabilityEnabled) {
                         startAvailabilityRefresh();
                     }
