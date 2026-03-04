@@ -645,6 +645,13 @@
             return `https://www.kayak.com/flights/${origin}-${dest}/${date}?sort=bestflight_a`;
         }
 
+        // Skyscanner deep-link: reliable URL format with good GCC route coverage.
+        function buildSkyscannerUrl(origin, dest, date) {
+            // Skyscanner uses YYMMDD format
+            const d = date.replace(/-/g, '').slice(2); // "2026-03-04" -> "260304"
+            return `https://www.skyscanner.com/transport/flights/${origin.toLowerCase()}/${dest.toLowerCase()}/${d}/`;
+        }
+
         function getAvailabilityHtml(airport, flight) {
             const depDate = flight.scheduled_departure.split(' ')[0] || '';
             const gfUrl = buildGoogleFlightsUrl(airport, flight.destination_iata, depDate);
@@ -681,6 +688,7 @@
                 const gfUrl = buildGoogleFlightsUrl(airport, flight.destination_iata, depDate);
                 const airlineUrl = buildAirlineUrl(flight.airline_icao, airport, flight.destination_iata, depDate);
                 const kayakUrl = buildKayakUrl(airport, flight.destination_iata, depDate);
+                const skyscannerUrl = buildSkyscannerUrl(airport, flight.destination_iata, depDate);
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td class="flight-number">${esc(flight.flight_number)}</td>
@@ -693,6 +701,7 @@
                     <td class="action-cell">
                         <a href="${esc(gfUrl)}" target="_blank" rel="noopener" class="btn-book">Google Flights</a>
                         <a href="${esc(kayakUrl)}" target="_blank" rel="noopener" class="btn-book">KAYAK</a>
+                        <a href="${esc(skyscannerUrl)}" target="_blank" rel="noopener" class="btn-book">Skyscanner</a>
                         ${airlineUrl ? `<a href="${esc(airlineUrl)}" target="_blank" rel="noopener" class="btn-airline">Airline Site</a>` : ''}
                     </td>
                 `;
