@@ -203,13 +203,12 @@ class FlightService:
                 model = aircraft.get("model", {})
                 aircraft_type = model.get("text", "") if model else ""
 
-            # Build booking URL - always use Google Flights for reliable results
-            dep_date = ""
-            if dep_time:
-                dep_date = dep_dt.strftime("%Y-%m-%d")
+            # Build booking URL via Google Search (shows flight booking cards)
+            dep_date = dep_dt.strftime("%Y-%m-%d") if dep_time else ""
+            date_part = f"+on+{dep_date}" if dep_date else ""
             booking_url = (
-                f"{GOOGLE_FLIGHTS_BASE}?q=flights+from+"
-                f"{origin_iata}+to+{dest_iata}+on+{dep_date}"
+                f"https://www.google.com/search?q=flights+from+"
+                f"{origin_iata}+to+{dest_iata}{date_part}"
             )
 
             return EvacFlight(
