@@ -21,6 +21,7 @@ if _api_dir not in sys.path:
 from gcc_data import GCC_AIRPORTS, GCC_IATA_CODES, PRIMARY_DEPARTURE_AIRPORTS
 from flight_service import FlightService
 from availability_service import is_configured as amadeus_configured, check_availability as amadeus_check, batch_check as amadeus_batch
+from aviationstack_service import is_configured as avstack_configured, check_flight_status as avstack_check, batch_verify_flights as avstack_batch
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -180,6 +181,48 @@ def api_availability_batch():
 def api_availability_status():
     """Check if Amadeus availability checking is configured."""
     return jsonify({"configured": amadeus_configured()})
+
+
+@app.route("/api/verify/flight/<flight_number>")
+def api_verify_flight(flight_number: str):
+    """Verify a single flight's status via AviationStack (cancellation check)."""
+    if not avstack_configured():
+        return jsonify({"error": "AviationStack not configured", "configured": False}), 503
+    try:
+        result = avstack_check(flight_number)
+        return jsonify({**result, "flight_number": flight_number.upper()})
+    except Exception as e:
+        logger.error(f"Flight verification error: {e}")
+        return jsonify({"status": "unknown", "is_cancelled": False, "source": "error"}), 500
+
+
+@app.route("/api/verify/batch", methods=["POST"])
+def api_verify_batch():
+    """
+    Batch verify flight statuses via AviationStack.
+    Body: {"flight_numbers": ["SQ495", "EK202", ...]}
+    Max 10 per batch (free tier rate limits).
+    """
+    if not avstack_configured():
+        return jsonify({"error": "AviationStack not configured", "configured": False}), 503
+    try:
+        body = request.get_json(force=True) or {}
+        flight_numbers = body.get("flight_numbers", [])
+        if not flight_numbers:
+            return jsonify({"error": "No flight numbers provided"}), 400
+        if len(flight_numbers) > 10:
+            return jsonify({"error": "Max 10 flights per batch (free tier limit)"}), 400
+        results = avstack_batch(flight_numbers)
+        return jsonify({"results": results, "fetched_at": _utc_now()})
+    except Exception as e:
+        logger.error(f"Batch verify error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/verify/status")
+def api_verify_status():
+    """Check if AviationStack verification is configured."""
+    return jsonify({"configured": avstack_configured()})
 
 
 @app.route("/api/airports")
