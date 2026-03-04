@@ -28,7 +28,7 @@ GCC_AIRPORTS = {
     # Bahrain
     "BAH": {"name": "Bahrain International", "city": "Manama", "country": "BH", "icao": "OBBI"},
     # Kuwait
-    "KWI": {"name": "Kuwait International", "city": "Kuwait City", "country": "KW", "icao": "OKBK"},
+    "KWI": {"name": "Kuwait International", "city": "Kuwait City", "country": "KW", "icao": "OKKK"},
     # Oman
     "MCT": {"name": "Muscat International", "city": "Muscat", "country": "OM", "icao": "OOMS"},
     "SLL": {"name": "Salalah Airport", "city": "Salalah", "country": "OM", "icao": "OOSA"},
