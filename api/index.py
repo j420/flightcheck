@@ -18,10 +18,10 @@ _api_dir = os.path.dirname(os.path.abspath(__file__))
 if _api_dir not in sys.path:
     sys.path.insert(0, _api_dir)
 
-from gcc_data import GCC_AIRPORTS, PRIMARY_DEPARTURE_AIRPORTS
+from gcc_data import GCC_AIRPORTS, GCC_IATA_CODES, PRIMARY_DEPARTURE_AIRPORTS
 from flight_service import FlightService
 from availability_service import is_configured as amadeus_configured, check_availability as amadeus_check, batch_check as amadeus_batch
-from google_flights_service import check_availability as gf_check, batch_check as gf_batch
+from google_flights_service import check_availability_from_status as status_check, batch_check_from_status as status_batch
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -90,19 +90,67 @@ def api_scan():
     return jsonify({"fetched_at": _utc_now(), "airports": output})
 
 
+@app.route("/api/search/destination/<dest_iata>")
+def api_search_destination(dest_iata: str):
+    """
+    Search all major GCC airports for flights to a specific destination.
+
+    Returns flights from every GCC hub heading to the given destination.
+    CRITICAL: Each airport is independent — one failure never blocks others.
+    """
+    dest_iata = dest_iata.upper()
+    if not dest_iata or len(dest_iata) != 3:
+        return jsonify({"error": "Invalid destination IATA code"}), 400
+    if dest_iata in GCC_IATA_CODES:
+        return jsonify({"error": "Destination must be outside GCC"}), 400
+
+    airports_param = request.args.get("airports", "")
+    if airports_param:
+        airports = [a.strip().upper() for a in airports_param.split(",")]
+        airports = [a for a in airports if a in GCC_AIRPORTS]
+    else:
+        airports = PRIMARY_DEPARTURE_AIRPORTS
+
+    try:
+        all_results = flight_service.scan_all_gcc_departures(airports)
+    except Exception as e:
+        logger.error(f"Error scanning for destination {dest_iata}: {e}")
+        all_results = {}
+
+    output = {}
+    total_count = 0
+    for airport, flights in all_results.items():
+        # Filter to only flights heading to the requested destination
+        matching = [f for f in flights if f.destination_iata.upper() == dest_iata]
+        if matching:
+            output[airport] = {
+                "airport_name": GCC_AIRPORTS[airport]["name"],
+                "city": GCC_AIRPORTS[airport]["city"],
+                "count": len(matching),
+                "flights": [f.to_dict() for f in matching],
+            }
+            total_count += len(matching)
+
+    return jsonify({
+        "destination": dest_iata,
+        "total_flights": total_count,
+        "fetched_at": _utc_now(),
+        "airports": output,
+    })
+
+
 def _availability_source():
-    """Return the active availability backend: 'amadeus', 'google_flights', or None."""
+    """Return the active availability backend."""
     if amadeus_configured():
         return "amadeus"
-    # Google Flights (via fast_flights) requires no config — always available as fallback
-    return "google_flights"
+    return "flight_status"
 
 
 @app.route("/api/availability/<origin>/<dest>/<date>")
 def api_availability(origin: str, dest: str, date: str):
     """Check seat availability for a specific route and date.
 
-    Uses Amadeus when configured, otherwise falls back to Google Flights scraping.
+    Uses Amadeus when configured, otherwise derives from flight status data.
     """
     source = _availability_source()
 
@@ -110,7 +158,7 @@ def api_availability(origin: str, dest: str, date: str):
         if source == "amadeus":
             result = amadeus_check(origin.upper(), dest.upper(), date)
         else:
-            result = gf_check(origin.upper(), dest.upper(), date)
+            result = status_check(origin.upper(), dest.upper(), date)
         return jsonify({**result, "route": f"{origin.upper()}-{dest.upper()}", "date": date})
     except Exception as e:
         logger.error(f"Availability check error ({source}): {e}")
@@ -123,7 +171,7 @@ def api_availability_batch():
     Batch check availability for multiple routes.
     Body: {"routes": [{"origin":"DXB","dest":"LHR","date":"2026-03-04"}, ...]}
 
-    Uses Amadeus when configured, otherwise falls back to Google Flights.
+    Uses Amadeus when configured, otherwise derives from loaded flight data.
     """
     source = _availability_source()
 
@@ -138,7 +186,9 @@ def api_availability_batch():
         if source == "amadeus":
             results = amadeus_batch(routes)
         else:
-            results = gf_batch(routes)
+            # Pass loaded FR24 flight data so status-based check can work
+            all_flights = body.get("flight_data", None)
+            results = status_batch(routes, all_flights)
         return jsonify({"results": results, "fetched_at": _utc_now()})
     except Exception as e:
         logger.error(f"Batch availability error ({source}): {e}")
@@ -147,7 +197,7 @@ def api_availability_batch():
 
 @app.route("/api/availability/status")
 def api_availability_status():
-    """Check if availability checking is available (Amadeus or Google Flights fallback)."""
+    """Check if availability checking is available."""
     source = _availability_source()
     return jsonify({
         "configured": True,

@@ -1,14 +1,16 @@
 """
-Google Flights availability integration via fast_flights (no API key needed).
+Status-based flight availability fallback (no API key needed).
 
-Scrapes Google Flights to check if flights are bookable on a given route/date.
-A flight appearing in results with a price = seats available.
+When Amadeus is not configured, we derive availability from flight status data:
+- Scheduled/Estimated commercial flights are inherently bookable
+- This is a reasonable heuristic: if FR24 shows a scheduled flight, seats
+  exist for purchase (unless fully sold out, which is uncommon on most routes).
 
-CRITICAL: This is a scraping-based fallback. It can break if Google changes
-their page format. Always handle failures gracefully — return unknown rather
-than crash.
+The frontend already provides direct booking links (Google Flights, KAYAK,
+airline sites) for users to verify and purchase.
 
-Caching: 10-minute TTL (same as Amadeus) with stale fallback.
+This module provides the same interface as availability_service so it
+slots in as a drop-in fallback.
 """
 
 import logging
@@ -18,149 +20,103 @@ from threading import Lock
 logger = logging.getLogger(__name__)
 
 # Cache: "ORIGIN-DEST-DATE" -> {"result": ..., "ts": unix}
-_gf_cache: dict[str, dict] = {}
-_gf_lock = Lock()
-GF_CACHE_TTL = 600  # 10 minutes
+_status_cache: dict[str, dict] = {}
+_status_lock = Lock()
+STATUS_CACHE_TTL = 600  # 10 minutes
 
 
-def _do_search(origin: str, dest: str, date: str) -> dict:
+def check_availability_from_status(
+    origin: str, dest: str, date: str, flights: list[dict] | None = None
+) -> dict:
     """
-    Perform a single Google Flights search via fast_flights.
+    Derive availability from flight status data.
 
-    Returns the standard availability dict matching Amadeus format.
-    """
-    try:
-        from fast_flights import FlightData, Passengers, get_flights
+    When we know flights exist on a route (from FR24 data), we can infer
+    they are bookable. This is the fallback when no API key is available.
 
-        result = get_flights(
-            flight_data=[
-                FlightData(date=date, from_airport=origin, to_airport=dest)
-            ],
-            trip="one-way",
-            seat="economy",
-            passengers=Passengers(adults=1),
-        )
+    Args:
+        origin: IATA code (e.g. "DXB")
+        dest: IATA code (e.g. "LHR")
+        date: ISO date string (e.g. "2026-03-04")
+        flights: Optional list of flight dicts from FR24 for this route
 
-        flights = result.flights or []
-
-        if not flights:
-            return {
-                "available": False,
-                "offers_count": 0,
-                "seats_available": None,
-                "cheapest": None,
-                "carriers": [],
-                "source": "google_flights",
-                "error": None,
-            }
-
-        # Extract cheapest price
-        cheapest = None
-        carriers = set()
-        for f in flights:
-            # f.price is a string like "$123" or "₹8,500"
-            if f.price:
-                price_str = f.price.strip()
-                # Extract numeric part — strip currency symbols and commas
-                numeric = ""
-                currency = "USD"
-                for ch in price_str:
-                    if ch.isdigit() or ch == ".":
-                        numeric += ch
-                    elif not numeric:
-                        # Currency symbol before the number
-                        if ch == "$":
-                            currency = "USD"
-                        elif ch == "€":
-                            currency = "EUR"
-                        elif ch == "£":
-                            currency = "GBP"
-                        elif ch == "₹":
-                            currency = "INR"
-
-                if numeric:
-                    try:
-                        price_val = float(numeric)
-                        if cheapest is None or price_val < float(cheapest["price"]):
-                            cheapest = {"price": numeric, "currency": currency}
-                    except ValueError:
-                        pass
-
-            # f.name is airline name(s)
-            if f.name:
-                carriers.add(f.name.strip())
-
-        return {
-            "available": True,
-            "offers_count": len(flights),
-            "seats_available": None,  # Google Flights doesn't give seat counts
-            "cheapest": cheapest,
-            "carriers": sorted(carriers),
-            "source": "google_flights",
-            "error": None,
-        }
-
-    except ImportError:
-        logger.error("fast_flights package not installed")
-        return {
-            "available": None,
-            "offers_count": 0,
-            "seats_available": None,
-            "cheapest": None,
-            "carriers": [],
-            "source": "google_flights",
-            "error": "fast_flights not installed",
-        }
-    except Exception as e:
-        logger.error(f"Google Flights search failed for {origin}->{dest} on {date}: {e}")
-        return {
-            "available": None,
-            "offers_count": 0,
-            "seats_available": None,
-            "cheapest": None,
-            "carriers": [],
-            "source": "google_flights",
-            "error": str(e),
-        }
-
-
-def check_availability(origin: str, dest: str, date: str) -> dict:
-    """
-    Check flight availability via Google Flights.
-
-    Same interface as availability_service.check_availability so it
-    can be used as a drop-in fallback.
+    Returns standard availability dict.
     """
     origin = origin.upper()
     dest = dest.upper()
     cache_key = f"{origin}-{dest}-{date}"
 
-    # Check cache
-    with _gf_lock:
-        cached = _gf_cache.get(cache_key)
-        if cached and (time.time() - cached["ts"]) < GF_CACHE_TTL:
+    with _status_lock:
+        cached = _status_cache.get(cache_key)
+        if cached and (time.time() - cached["ts"]) < STATUS_CACHE_TTL:
             return cached["result"]
 
-    result = _do_search(origin, dest, date)
+    # If we have flight data, use it to determine availability
+    if flights:
+        bookable_statuses = {"scheduled", "estimated", "delayed", "departed", "unknown"}
+        bookable = [
+            f for f in flights
+            if f.get("status", "").lower() in bookable_statuses
+            and f.get("destination_iata", "").upper() == dest
+        ]
 
-    # Cache the result
-    with _gf_lock:
-        _gf_cache[cache_key] = {"result": result, "ts": time.time()}
+        carriers = sorted({f.get("airline_name", "") for f in bookable if f.get("airline_name")})
+
+        result = {
+            "available": len(bookable) > 0,
+            "offers_count": len(bookable),
+            "seats_available": None,
+            "cheapest": None,
+            "carriers": carriers,
+            "source": "flight_status",
+            "error": None,
+        }
+    else:
+        # No flight data provided — we can't determine availability
+        result = {
+            "available": None,
+            "offers_count": 0,
+            "seats_available": None,
+            "cheapest": None,
+            "carriers": [],
+            "source": "flight_status",
+            "error": None,
+        }
+
+    with _status_lock:
+        _status_cache[cache_key] = {"result": result, "ts": time.time()}
 
     return result
 
 
-def batch_check(routes: list[dict]) -> dict:
+def batch_check_from_status(routes: list[dict], all_flights: dict | None = None) -> dict:
     """
-    Check availability for multiple routes via Google Flights.
+    Check availability for multiple routes using flight status data.
 
-    Same interface as availability_service.batch_check.
+    Args:
+        routes: [{"origin": "DXB", "dest": "LHR", "date": "2026-03-04"}, ...]
+        all_flights: Optional dict of airport -> list of flight dicts from FR24
+
+    Returns:
+        {"DXB-LHR-2026-03-04": {availability result}, ...}
     """
     results = {}
     for route in routes:
-        key = f"{route['origin']}-{route['dest']}-{route['date']}"
+        origin = route["origin"].upper()
+        dest = route["dest"].upper()
+        date = route["date"]
+        key = f"{origin}-{dest}-{date}"
+
         if key not in results:
-            results[key] = check_availability(
-                route["origin"], route["dest"], route["date"]
+            # Find matching flights from FR24 data if available
+            route_flights = None
+            if all_flights and origin in all_flights:
+                route_flights = [
+                    f for f in all_flights[origin]
+                    if f.get("destination_iata", "").upper() == dest
+                ]
+
+            results[key] = check_availability_from_status(
+                origin, dest, date, route_flights
             )
     return results

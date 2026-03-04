@@ -82,9 +82,31 @@ main {
     flex-wrap: wrap;
 }
 
-.airport-selector label {
+.airport-selector label,
+.dest-search label {
     font-weight: 600;
     white-space: nowrap;
+}
+
+.dest-search {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+}
+
+.dest-search input[type="text"] {
+    flex: 1;
+    min-width: 200px;
+    padding: 0.6rem 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    font-size: 0.9rem;
 }
 
 .airport-selector select {
@@ -563,12 +585,14 @@ footer p + p {
 
 /* Responsive */
 @media (max-width: 768px) {
-    .airport-selector {
+    .airport-selector,
+    .dest-search {
         flex-direction: column;
         align-items: stretch;
     }
 
-    .airport-selector select {
+    .airport-selector select,
+    .dest-search input[type="text"] {
         min-width: unset;
     }
 
