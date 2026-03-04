@@ -56,6 +56,11 @@
                 <label><input type="checkbox" id="filter-estimated" checked> Estimated</label>
                 <label><input type="checkbox" id="filter-delayed" checked> Delayed</label>
                 <label><input type="checkbox" id="filter-unknown" checked> Unknown Status</label>
+                <span class="filter-divider"></span>
+                <label class="avail-filter-label" id="avail-filter-wrap" style="display:none">
+                    <input type="checkbox" id="filter-available-only"> Seats Available Only
+                </label>
+                <span id="avail-status-text" class="avail-status"></span>
             </div>
         </section>
 
@@ -106,6 +111,12 @@
 
         // Last computed filtered data for rendering
         let lastFiltered = null;
+
+        // Availability state
+        // Key: "ORIGIN-DEST-DATE", Value: { available: bool|null, cheapest: {price,currency}|null, checking: bool }
+        const availabilityCache = {};
+        let availabilityEnabled = false; // whether Amadeus is configured
+        let availabilityChecking = false;
 
         // ---- Fetch with timeout and retry ----
 
@@ -281,6 +292,7 @@
                     lastFetchedAt = data.fetched_at || new Date().toISOString();
                     updateTimestamp();
                     applyFiltersAndRender();
+                    checkAvailabilityForLoadedFlights();
                 }
             } catch (e) {
                 showError(`Network error: ${e.message}. Will retry automatically.`);
@@ -337,6 +349,7 @@
             if (failed > 0) showError(`${failed} airport(s) failed to load. Showing available data. Will auto-refresh.`);
             updateTimestamp();
             applyFiltersAndRender();
+            checkAvailabilityForLoadedFlights();
             startAutoRefresh();
         }
 
@@ -345,11 +358,22 @@
         function applyFiltersAndRender() {
             if (!lastData) return;
 
+            const showAvailOnly = availabilityEnabled
+                && document.getElementById('filter-available-only').checked;
+
             const filtered = {};
             let totalCount = 0;
             for (const [airport, info] of Object.entries(lastData)) {
                 let flights = filterFlights(info.flights);
                 flights = applyColumnFilters(flights);
+                if (showAvailOnly) {
+                    flights = flights.filter(f => {
+                        const depDate = f.scheduled_departure.split(' ')[0] || '';
+                        const key = `${airport}-${f.destination_iata}-${depDate}`;
+                        const avail = availabilityCache[key];
+                        return avail && avail.available === true;
+                    });
+                }
                 filtered[airport] = {
                     airport_name: info.airport_name,
                     city: info.city,
@@ -436,6 +460,23 @@
             TAP: 'https://www.flytap.com/en/booking',
         };
 
+        function getAvailabilityHtml(airport, flight) {
+            const depDate = flight.scheduled_departure.split(' ')[0] || '';
+            const key = `${airport}-${flight.destination_iata}-${depDate}`;
+            const avail = availabilityCache[key];
+
+            if (!avail) return '<span class="avail-badge avail-unknown">--</span>';
+            if (avail.checking) return '<span class="avail-badge avail-checking">Checking...</span>';
+            if (avail.available === null) return '<span class="avail-badge avail-unknown">--</span>';
+            if (avail.available) {
+                const price = avail.cheapest
+                    ? `<span class="avail-price">from ${esc(avail.cheapest.currency)} ${esc(avail.cheapest.price)}</span>`
+                    : '';
+                return `<span class="avail-badge avail-yes">Seats Open</span>${price}`;
+            }
+            return '<span class="avail-badge avail-no">Sold Out</span>';
+        }
+
         function buildTbody(pageFlights, airport) {
             const tbody = document.createElement('tbody');
             for (const flight of pageFlights) {
@@ -443,6 +484,8 @@
                 const depDate = flight.scheduled_departure.split(' ')[0] || '';
                 const gfUrl = buildGoogleFlightsUrl(airport, flight.destination_iata, depDate);
                 const airlineUrl = AIRLINE_URLS[(flight.airline_icao || '').toUpperCase()] || '';
+                const availCol = availabilityEnabled
+                    ? `<td class="avail-cell">${getAvailabilityHtml(airport, flight)}</td>` : '';
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td class="flight-number">${esc(flight.flight_number)}</td>
@@ -451,6 +494,7 @@
                     <td>${esc(flight.scheduled_departure)}</td>
                     <td><span class="status-badge ${statusClass}">${esc(flight.status)}</span></td>
                     <td>${esc(flight.aircraft_type || '-')}</td>
+                    ${availCol}
                     <td class="action-cell">
                         <a href="${esc(gfUrl)}" target="_blank" rel="noopener" class="btn-book">Search Flights</a>
                         ${airlineUrl ? `<a href="${esc(airlineUrl)}" target="_blank" rel="noopener" class="btn-airline">Airline Site</a>` : ''}
@@ -506,7 +550,10 @@
             const thead = document.createElement('thead');
 
             const headerRow = document.createElement('tr');
-            ['Flight','Airline','Destination','Departure','Status','Aircraft','Action'].forEach(h => {
+            const cols = ['Flight','Airline','Destination','Departure','Status','Aircraft'];
+            if (availabilityEnabled) cols.push('Availability');
+            cols.push('Action');
+            cols.forEach(h => {
                 const th = document.createElement('th');
                 th.textContent = h;
                 headerRow.appendChild(th);
@@ -529,6 +576,7 @@
                 th.appendChild(input);
                 filterRow.appendChild(th);
             });
+            if (availabilityEnabled) filterRow.appendChild(document.createElement('th'));
             filterRow.appendChild(document.createElement('th'));
             thead.appendChild(filterRow);
             table.appendChild(thead);
@@ -619,6 +667,108 @@
                 applyFiltersAndRender();
             });
         });
+
+        document.getElementById('filter-available-only').addEventListener('change', () => {
+            for (const k in currentPage) currentPage[k] = 1;
+            applyFiltersAndRender();
+        });
+
+        // ---- Seat availability checking ----
+
+        async function checkAvailabilityStatus() {
+            try {
+                const resp = await fetch(`${API_BASE}/availability/status`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    availabilityEnabled = data.configured;
+                    if (availabilityEnabled) {
+                        document.getElementById('avail-filter-wrap').style.display = '';
+                    }
+                }
+            } catch (e) {
+                // Availability not available — non-critical
+            }
+        }
+
+        async function checkAvailabilityForLoadedFlights() {
+            if (!availabilityEnabled || !lastData) return;
+            if (availabilityChecking) return;
+            availabilityChecking = true;
+
+            const statusEl = document.getElementById('avail-status-text');
+            statusEl.textContent = 'Checking seat availability...';
+
+            // Collect unique routes
+            const routes = [];
+            const seen = new Set();
+            for (const [airport, info] of Object.entries(lastData)) {
+                for (const f of info.flights) {
+                    const depDate = f.scheduled_departure.split(' ')[0] || '';
+                    if (!depDate) continue;
+                    const key = `${airport}-${f.destination_iata}-${depDate}`;
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        routes.push({ origin: airport, dest: f.destination_iata, date: depDate });
+                        // Mark as checking
+                        availabilityCache[key] = { available: null, cheapest: null, checking: true };
+                    }
+                }
+            }
+
+            if (routes.length === 0) {
+                availabilityChecking = false;
+                statusEl.textContent = '';
+                return;
+            }
+
+            // Batch in chunks of 30 (API limit)
+            const chunks = [];
+            for (let i = 0; i < routes.length; i += 30) {
+                chunks.push(routes.slice(i, i + 30));
+            }
+
+            let completed = 0;
+            for (const chunk of chunks) {
+                try {
+                    const resp = await fetch(`${API_BASE}/availability/batch`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ routes: chunk }),
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        for (const [key, result] of Object.entries(data.results || {})) {
+                            availabilityCache[key] = { ...result, checking: false };
+                        }
+                    } else {
+                        // Mark chunk routes as unknown
+                        for (const r of chunk) {
+                            const key = `${r.origin}-${r.dest}-${r.date}`;
+                            availabilityCache[key] = { available: null, cheapest: null, checking: false };
+                        }
+                    }
+                } catch (e) {
+                    console.error('Availability batch check failed:', e);
+                    for (const r of chunk) {
+                        const key = `${r.origin}-${r.dest}-${r.date}`;
+                        availabilityCache[key] = { available: null, cheapest: null, checking: false };
+                    }
+                }
+                completed += chunk.length;
+                statusEl.textContent = `Checking availability... ${completed}/${routes.length} routes`;
+                // Re-render to show progressive results
+                applyFiltersAndRender();
+            }
+
+            const availCount = Object.values(availabilityCache)
+                .filter(a => a.available === true).length;
+            statusEl.textContent = `${availCount} route(s) with seats available`;
+            availabilityChecking = false;
+            applyFiltersAndRender();
+        }
+
+        // Check availability status on load, then auto-check when flights are loaded
+        checkAvailabilityStatus();
 
         // ---- Connection and reliability monitoring ----
 
