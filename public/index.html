@@ -87,13 +87,21 @@
         const AUTO_REFRESH_SECONDS = 120;
         const FETCH_TIMEOUT_MS = 15000;
         const MAX_RETRIES = 2;
+        const ROWS_PER_PAGE = 15;
 
         let autoRefreshTimer = null;
         let countdownTimer = null;
         let countdownSeconds = 0;
         let lastFetchedAt = null;
-        let lastMode = null; // 'search' or 'scan'
+        let lastMode = null;
         let lastSearchIata = null;
+        let lastData = null;
+
+        // Pagination state per airport: { "DXB": 1, "AUH": 1, ... }
+        const currentPage = {};
+
+        // Last computed filtered data for rendering
+        let lastFiltered = null;
 
         // ---- Fetch with timeout and retry ----
 
@@ -116,7 +124,6 @@
                 try {
                     const resp = await fetchWithTimeout(url);
                     if (resp.ok) return resp;
-                    // Non-retryable HTTP errors (4xx)
                     if (resp.status >= 400 && resp.status < 500) return resp;
                     throw new Error(`HTTP ${resp.status}`);
                 } catch (e) {
@@ -141,9 +148,7 @@
 
         function updateTimestamp() {
             const el = document.getElementById('last-updated');
-            if (lastFetchedAt) {
-                el.textContent = `Updated: ${lastFetchedAt}`;
-            }
+            if (lastFetchedAt) el.textContent = `Updated: ${lastFetchedAt}`;
         }
 
         function showError(msg) {
@@ -162,7 +167,6 @@
             stopAutoRefresh();
             countdownSeconds = AUTO_REFRESH_SECONDS;
             updateCountdown();
-
             countdownTimer = setInterval(() => {
                 countdownSeconds--;
                 if (countdownSeconds <= 0) {
@@ -187,9 +191,8 @@
         }
 
         function triggerRefresh() {
-            if (lastMode === 'scan') {
-                scanAll();
-            } else if (lastMode === 'search' && lastSearchIata) {
+            if (lastMode === 'scan') scanAll();
+            else if (lastMode === 'search' && lastSearchIata) {
                 document.getElementById('airport-select').value = lastSearchIata;
                 searchFlights();
             }
@@ -216,14 +219,7 @@
             });
         }
 
-        const columnFilters = {
-            flight: '',
-            airline: '',
-            destination: '',
-            departure: '',
-            status: '',
-            aircraft: '',
-        };
+        const columnFilters = { flight: '', airline: '', destination: '', departure: '', status: '', aircraft: '' };
 
         function applyColumnFilters(flights) {
             return flights.filter(f => {
@@ -240,22 +236,24 @@
             });
         }
 
+        // Debounced column filter handler
+        let filterDebounce = null;
         function onColumnFilter(col, value) {
             columnFilters[col] = value.toLowerCase().trim();
-            applyFiltersAndRender();
+            // Reset all pages to 1 when filter changes
+            for (const k in currentPage) currentPage[k] = 1;
+            if (filterDebounce) clearTimeout(filterDebounce);
+            filterDebounce = setTimeout(() => {
+                applyFiltersAndRender();
+            }, 150);
         }
 
-        // ---- Data ----
-
-        let lastData = null;
+        // ---- Data fetching ----
 
         async function searchFlights() {
             const select = document.getElementById('airport-select');
             const iata = select.value;
-            if (!iata) {
-                alert('Please select a departure airport.');
-                return;
-            }
+            if (!iata) { alert('Please select a departure airport.'); return; }
 
             clearError();
             stopAutoRefresh();
@@ -270,16 +268,12 @@
             try {
                 const resp = await fetchWithRetry(`${API_BASE}/departures/${iata}`);
                 const data = await resp.json();
-
                 if (data.error) {
                     showError(`Error fetching ${iata}: ${data.error}`);
                     if (!lastData) showStatus('Failed to load. Retrying automatically...');
                 } else {
-                    lastData = {[iata]: {
-                        airport_name: data.airport_name,
-                        city: data.city,
-                        flights: data.flights,
-                    }};
+                    lastData = {[iata]: { airport_name: data.airport_name, city: data.city, flights: data.flights }};
+                    currentPage[iata] = 1;
                     lastFetchedAt = data.fetched_at || new Date().toISOString();
                     updateTimestamp();
                     applyFiltersAndRender();
@@ -304,10 +298,10 @@
             btn.disabled = true;
             btn.textContent = 'Scanning...';
             lastData = {};
+            lastFiltered = null;
             document.getElementById('flights-container').innerHTML = '';
 
-            let completed = 0;
-            let failed = 0;
+            let completed = 0, failed = 0;
             const total = MAJOR_AIRPORTS.length;
             showStatus(`Scanning airports... 0/${total} done`);
 
@@ -316,15 +310,10 @@
                     const resp = await fetchWithRetry(`${API_BASE}/departures/${iata}`);
                     const data = await resp.json();
                     if (!data.error && data.flights) {
-                        lastData[iata] = {
-                            airport_name: data.airport_name,
-                            city: data.city,
-                            flights: data.flights,
-                        };
+                        lastData[iata] = { airport_name: data.airport_name, city: data.city, flights: data.flights };
+                        currentPage[iata] = currentPage[iata] || 1;
                         if (data.fetched_at) lastFetchedAt = data.fetched_at;
-                    } else {
-                        failed++;
-                    }
+                    } else { failed++; }
                 } catch (e) {
                     console.error(`Failed to fetch ${iata}:`, e);
                     failed++;
@@ -335,18 +324,15 @@
             });
 
             await Promise.all(promises);
-
             btn.disabled = false;
             btn.textContent = 'Scan All Major Airports';
-
-            if (failed > 0) {
-                showError(`${failed} airport(s) failed to load. Showing available data. Will auto-refresh.`);
-            }
-
+            if (failed > 0) showError(`${failed} airport(s) failed to load. Showing available data. Will auto-refresh.`);
             updateTimestamp();
             applyFiltersAndRender();
             startAutoRefresh();
         }
+
+        // ---- Rendering ----
 
         function applyFiltersAndRender() {
             if (!lastData) return;
@@ -365,6 +351,7 @@
                 totalCount += flights.length;
             }
 
+            lastFiltered = filtered;
             const airportNames = Object.keys(filtered).join(', ');
             showStatus(`Showing results for: ${airportNames}`, totalCount);
             renderFlights(filtered);
@@ -377,71 +364,110 @@
             for (const [airport, info] of Object.entries(airportData)) {
                 if (!info.flights || info.flights.length === 0) continue;
 
+                const totalFlights = info.flights.length;
+                const totalPages = Math.ceil(totalFlights / ROWS_PER_PAGE);
+                if (!currentPage[airport] || currentPage[airport] > totalPages) currentPage[airport] = 1;
+                const page = currentPage[airport];
+                const startIdx = (page - 1) * ROWS_PER_PAGE;
+                const pageFlights = info.flights.slice(startIdx, startIdx + ROWS_PER_PAGE);
+
                 const section = document.createElement('div');
                 section.className = 'airport-section';
-                section.innerHTML = `
-                    <h2>${info.city} (${airport}) - ${info.airport_name}</h2>
-                    <p class="flight-summary">${info.count} evacuation flight(s) to non-GCC destinations</p>
-                `;
+                section.dataset.airport = airport;
 
+                // Header
+                const header = document.createElement('h2');
+                header.textContent = `${info.city} (${airport}) - ${info.airport_name}`;
+                section.appendChild(header);
+
+                const summary = document.createElement('p');
+                summary.className = 'flight-summary';
+                summary.textContent = `${info.count} evacuation flight(s) to non-GCC destinations`;
+                section.appendChild(summary);
+
+                // Table with filter row
                 const table = document.createElement('table');
-                table.innerHTML = `
-                    <thead>
-                        <tr>
-                            <th>Flight</th>
-                            <th>Airline</th>
-                            <th>Destination</th>
-                            <th>Departure</th>
-                            <th>Status</th>
-                            <th>Aircraft</th>
-                            <th>Action</th>
-                        </tr>
-                        <tr class="filter-row">
-                            <th><input type="text" placeholder="Filter..." class="col-filter" data-col="flight" value="${esc(columnFilters.flight)}"></th>
-                            <th><input type="text" placeholder="Filter..." class="col-filter" data-col="airline" value="${esc(columnFilters.airline)}"></th>
-                            <th><input type="text" placeholder="Filter..." class="col-filter" data-col="destination" value="${esc(columnFilters.destination)}"></th>
-                            <th><input type="text" placeholder="Filter..." class="col-filter" data-col="departure" value="${esc(columnFilters.departure)}"></th>
-                            <th><input type="text" placeholder="Filter..." class="col-filter" data-col="status" value="${esc(columnFilters.status)}"></th>
-                            <th><input type="text" placeholder="Filter..." class="col-filter" data-col="aircraft" value="${esc(columnFilters.aircraft)}"></th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                `;
+                const thead = document.createElement('thead');
 
+                // Header row
+                const headerRow = document.createElement('tr');
+                ['Flight','Airline','Destination','Departure','Status','Aircraft','Action'].forEach(h => {
+                    const th = document.createElement('th');
+                    th.textContent = h;
+                    headerRow.appendChild(th);
+                });
+                thead.appendChild(headerRow);
+
+                // Filter row
+                const filterRow = document.createElement('tr');
+                filterRow.className = 'filter-row';
+                ['flight','airline','destination','departure','status','aircraft'].forEach(col => {
+                    const th = document.createElement('th');
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.placeholder = 'Filter...';
+                    input.className = 'col-filter';
+                    input.dataset.col = col;
+                    input.value = columnFilters[col];
+                    input.addEventListener('input', (e) => {
+                        onColumnFilter(e.target.dataset.col, e.target.value);
+                    });
+                    th.appendChild(input);
+                    filterRow.appendChild(th);
+                });
+                const emptyTh = document.createElement('th');
+                filterRow.appendChild(emptyTh);
+                thead.appendChild(filterRow);
+                table.appendChild(thead);
+
+                // Body rows (paginated)
                 const tbody = document.createElement('tbody');
-                for (const flight of info.flights) {
+                for (const flight of pageFlights) {
                     const statusClass = getStatusClass(flight.status);
                     const row = document.createElement('tr');
                     row.innerHTML = `
                         <td class="flight-number">${esc(flight.flight_number)}</td>
                         <td>${esc(flight.airline_name)}</td>
-                        <td>
-                            <strong>${esc(flight.destination_iata)}</strong>
-                            <br><span class="dest-name">${esc(flight.destination_name)}</span>
-                        </td>
+                        <td><strong>${esc(flight.destination_iata)}</strong><br><span class="dest-name">${esc(flight.destination_name)}</span></td>
                         <td>${esc(flight.scheduled_departure)}</td>
                         <td><span class="status-badge ${statusClass}">${esc(flight.status)}</span></td>
                         <td>${esc(flight.aircraft_type || '-')}</td>
-                        <td>
-                            <a href="${esc(flight.booking_url)}" target="_blank" rel="noopener" class="btn-book">
-                                Book Now
-                            </a>
-                        </td>
+                        <td><a href="${esc(flight.booking_url)}" target="_blank" rel="noopener" class="btn-book">Book Now</a></td>
                     `;
                     tbody.appendChild(row);
                 }
-
                 table.appendChild(tbody);
                 section.appendChild(table);
+
+                // Pagination controls
+                if (totalPages > 1) {
+                    const pager = document.createElement('div');
+                    pager.className = 'pagination';
+
+                    const prevBtn = document.createElement('button');
+                    prevBtn.textContent = 'Previous';
+                    prevBtn.className = 'btn-page';
+                    prevBtn.disabled = page <= 1;
+                    prevBtn.addEventListener('click', () => { currentPage[airport]--; renderFlights(lastFiltered); });
+
+                    const pageInfo = document.createElement('span');
+                    pageInfo.className = 'page-info';
+                    pageInfo.textContent = `Page ${page} of ${totalPages} (${totalFlights} flights)`;
+
+                    const nextBtn = document.createElement('button');
+                    nextBtn.textContent = 'Next';
+                    nextBtn.className = 'btn-page';
+                    nextBtn.disabled = page >= totalPages;
+                    nextBtn.addEventListener('click', () => { currentPage[airport]++; renderFlights(lastFiltered); });
+
+                    pager.appendChild(prevBtn);
+                    pager.appendChild(pageInfo);
+                    pager.appendChild(nextBtn);
+                    section.appendChild(pager);
+                }
+
                 container.appendChild(section);
             }
-
-            // Attach filter input listeners
-            container.querySelectorAll('.col-filter').forEach(input => {
-                input.addEventListener('input', (e) => {
-                    onColumnFilter(e.target.dataset.col, e.target.value);
-                });
-            });
 
             if (container.children.length === 0) {
                 container.innerHTML = '<p class="no-flights">No evacuation flights found matching your filters. Try adjusting the status filters or selecting a different airport.</p>';
@@ -465,7 +491,10 @@
 
         // Re-filter when checkboxes change
         document.querySelectorAll('.filters input[type="checkbox"]').forEach(cb => {
-            cb.addEventListener('change', applyFiltersAndRender);
+            cb.addEventListener('change', () => {
+                for (const k in currentPage) currentPage[k] = 1;
+                applyFiltersAndRender();
+            });
         });
     </script>
 </body>
