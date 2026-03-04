@@ -12,6 +12,7 @@ from flask import Flask, jsonify, request
 
 from gcc_data import GCC_AIRPORTS, PRIMARY_DEPARTURE_AIRPORTS
 from flight_service import FlightService
+from availability_service import is_configured as amadeus_configured, check_availability, batch_check
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -74,6 +75,50 @@ def api_scan():
     except Exception as e:
         logger.error(f"Error scanning airports: {e}")
         return jsonify({"error": str(e), "fetched_at": _utc_now()}), 500
+
+
+@app.route("/api/availability/<origin>/<dest>/<date>")
+def api_availability(origin: str, dest: str, date: str):
+    """Check seat availability for a specific route and date."""
+    if not amadeus_configured():
+        return jsonify({"error": "Availability checking not configured", "configured": False}), 503
+
+    try:
+        result = check_availability(origin.upper(), dest.upper(), date)
+        return jsonify({**result, "route": f"{origin.upper()}-{dest.upper()}", "date": date})
+    except Exception as e:
+        logger.error(f"Availability check error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/availability/batch", methods=["POST"])
+def api_availability_batch():
+    """
+    Batch check availability for multiple routes.
+    Body: {"routes": [{"origin":"DXB","dest":"LHR","date":"2026-03-04"}, ...]}
+    """
+    if not amadeus_configured():
+        return jsonify({"error": "Availability checking not configured", "configured": False}), 503
+
+    try:
+        body = request.get_json(force=True) or {}
+        routes = body.get("routes", [])
+        if not routes:
+            return jsonify({"error": "No routes provided"}), 400
+        if len(routes) > 30:
+            return jsonify({"error": "Max 30 routes per batch"}), 400
+
+        results = batch_check(routes)
+        return jsonify({"results": results, "fetched_at": _utc_now()})
+    except Exception as e:
+        logger.error(f"Batch availability error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/availability/status")
+def api_availability_status():
+    """Check if Amadeus availability checking is configured."""
+    return jsonify({"configured": amadeus_configured()})
 
 
 @app.route("/api/airports")
