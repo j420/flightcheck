@@ -203,14 +203,13 @@ class FlightService:
                 model = aircraft.get("model", {})
                 aircraft_type = model.get("text", "") if model else ""
 
-            # Build booking URL
-            booking_url = get_booking_url(airline_icao)
-            if not booking_url:
-                # Fallback to Google Flights
-                booking_url = (
-                    f"{GOOGLE_FLIGHTS_BASE}?q=flights+from+"
-                    f"{origin_iata}+to+{dest_iata}"
-                )
+            # Build booking URL via Google Search (shows flight booking cards)
+            dep_date = dep_dt.strftime("%Y-%m-%d") if dep_time else ""
+            date_part = f"+on+{dep_date}" if dep_date else ""
+            booking_url = (
+                f"https://www.google.com/search?q=flights+from+"
+                f"{origin_iata}+to+{dest_iata}{date_part}"
+            )
 
             return EvacFlight(
                 flight_number=callsign,
