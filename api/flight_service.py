@@ -24,11 +24,12 @@ from gcc_data import (
 
 logger = logging.getLogger(__name__)
 
-# Statuses we consider viable for booking
-VIABLE_STATUSES = {"scheduled", "estimated", "delayed", "departed"}
+# Statuses we consider viable for booking — only flights people can still board.
+# "departed" is excluded because you can't book a flight that already left.
+VIABLE_STATUSES = {"scheduled", "estimated", "delayed"}
 
-# Statuses to exclude
-EXCLUDED_STATUSES = {"canceled", "cancelled", "diverted", "landed"}
+# Statuses to exclude explicitly
+EXCLUDED_STATUSES = {"canceled", "cancelled", "diverted", "landed", "departed"}
 
 # Cache: airport_iata -> {"flights": [...], "timestamp": unix_ts}
 _results_cache: dict[str, dict] = {}

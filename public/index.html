@@ -14,7 +14,7 @@
     <header>
         <h1>GCC Evacuation Flight Tracker</h1>
         <p class="subtitle">Live commercial flights departing GCC airports to non-GCC destinations</p>
-        <p class="warning">Airspace status is fluid. Verify flight status directly with airlines before booking.</p>
+        <p class="warning">Flight data may lag behind airline updates. Always verify status and availability directly with the airline before booking.</p>
     </header>
 
     <main>
@@ -60,15 +60,14 @@
             <div class="filters">
                 <label><input type="checkbox" id="filter-scheduled" checked> Scheduled</label>
                 <label><input type="checkbox" id="filter-estimated" checked> Estimated</label>
-                <label><input type="checkbox" id="filter-delayed" checked> Delayed</label>
-                <label><input type="checkbox" id="filter-unknown" checked> Unknown Status</label>
+                <label><input type="checkbox" id="filter-delayed"> Delayed</label>
+                <label><input type="checkbox" id="filter-unknown"> Unknown Status</label>
                 <span class="filter-divider"></span>
                 <label for="filter-availability">Availability:</label>
                 <select id="filter-availability">
                     <option value="all">All Flights</option>
                     <option value="available">Seats Available</option>
-                    <option value="soldout">Sold Out</option>
-                    <option value="unknown">Unknown (--)</option>
+                    <option value="unknown">Unknown</option>
                 </select>
                 <span class="filter-divider"></span>
                 <span id="avail-status-text" class="avail-status"></span>
@@ -521,8 +520,6 @@
 
                 if (filter === 'available') {
                     return avail && avail.available === true;
-                } else if (filter === 'soldout') {
-                    return avail && avail.available === false;
                 } else if (filter === 'unknown') {
                     return !avail || avail.available === null || avail.checking;
                 }
@@ -649,31 +646,31 @@
         }
 
         function getAvailabilityHtml(airport, flight) {
-            if (!availabilityEnabled) {
-                return '<span class="avail-badge avail-unknown" title="Availability data not configured">--</span>';
-            }
             const depDate = flight.scheduled_departure.split(' ')[0] || '';
+            const gfUrl = buildGoogleFlightsUrl(airport, flight.destination_iata, depDate);
+
+            if (!availabilityEnabled) {
+                // No Amadeus — show verify link so users can check on Google Flights
+                return `<a href="${esc(gfUrl)}" target="_blank" rel="noopener" class="avail-badge avail-verify" title="Verify availability on Google Flights">Verify</a>`;
+            }
+
             const key = `${airport}-${flight.destination_iata}-${depDate}`;
             const avail = availabilityCache[key];
 
-            if (!avail) return '<span class="avail-badge avail-unknown">--</span>';
+            if (!avail) return `<a href="${esc(gfUrl)}" target="_blank" rel="noopener" class="avail-badge avail-verify">Verify</a>`;
             if (avail.checking) return '<span class="avail-badge avail-checking">Checking...</span>';
-            if (avail.available === null) return '<span class="avail-badge avail-unknown">--</span>';
+            if (avail.available === null) return `<a href="${esc(gfUrl)}" target="_blank" rel="noopener" class="avail-badge avail-verify">Verify</a>`;
             if (avail.available) {
-                let seatText;
-                if (avail.seats_available) {
-                    seatText = `${avail.seats_available}${avail.seats_available >= 9 ? '+' : ''} seats`;
-                } else if (avail.source === 'flight_status') {
-                    seatText = 'Likely Available';
-                } else {
-                    seatText = 'Bookable';
-                }
+                const seatText = avail.seats_available
+                    ? `${avail.seats_available}${avail.seats_available >= 9 ? '+' : ''} seats`
+                    : 'Bookable';
                 const price = avail.cheapest
                     ? `<span class="avail-price">from ${esc(avail.cheapest.currency)} ${esc(avail.cheapest.price)}</span>`
                     : '';
                 return `<span class="avail-badge avail-yes">${seatText}</span>${price}`;
             }
-            return '<span class="avail-badge avail-no">Sold Out</span>';
+            // No seats — don't show "Sold Out", just show verify link
+            return `<a href="${esc(gfUrl)}" target="_blank" rel="noopener" class="avail-badge avail-verify">Verify</a>`;
         }
 
         function buildTbody(pageFlights, airport) {
@@ -871,15 +868,12 @@
 
         // ---- Seat availability checking ----
 
-        let availabilitySource = null; // 'amadeus' or 'google_flights'
-
         async function checkAvailabilityStatus() {
             try {
                 const resp = await fetch(`${API_BASE}/availability/status`);
                 if (resp.ok) {
                     const data = await safeJson(resp);
                     availabilityEnabled = data.configured;
-                    availabilitySource = data.source || null;
                     if (availabilityEnabled) {
                         startAvailabilityRefresh();
                     }
@@ -945,15 +939,10 @@
             let completed = 0;
             for (const chunk of chunks) {
                 try {
-                    // Build flight_data map for status-based availability fallback
-                    const flightDataMap = {};
-                    for (const [airport, info] of Object.entries(lastData)) {
-                        flightDataMap[airport] = info.flights;
-                    }
                     const resp = await fetch(`${API_BASE}/availability/batch`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ routes: chunk, flight_data: flightDataMap }),
+                        body: JSON.stringify({ routes: chunk }),
                     });
                     if (resp.ok) {
                         const data = await safeJson(resp);
