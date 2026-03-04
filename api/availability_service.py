@@ -91,6 +91,7 @@ def check_availability(origin: str, dest: str, date: str) -> dict:
         {
             "available": bool,
             "offers_count": int,
+            "seats_available": int | None,  # max bookable seats across offers (capped at 9 by Amadeus)
             "cheapest": {"price": "123.45", "currency": "USD"} | None,
             "carriers": ["EK", "BA", ...],
             "error": str | None,
@@ -108,6 +109,7 @@ def check_availability(origin: str, dest: str, date: str) -> dict:
         return {
             "available": None,
             "offers_count": 0,
+            "seats_available": None,
             "cheapest": None,
             "carriers": [],
             "error": "Amadeus API not configured",
@@ -118,6 +120,7 @@ def check_availability(origin: str, dest: str, date: str) -> dict:
         return {
             "available": None,
             "offers_count": 0,
+            "seats_available": None,
             "cheapest": None,
             "carriers": [],
             "error": "Authentication failed",
@@ -145,6 +148,7 @@ def check_availability(origin: str, dest: str, date: str) -> dict:
         offers = body.get("data", [])
         carriers = set()
         cheapest = None
+        max_seats = 0
 
         for offer in offers:
             price = offer.get("price", {})
@@ -155,6 +159,11 @@ def check_availability(origin: str, dest: str, date: str) -> dict:
                 if cheapest is None or float(total) < float(cheapest["price"]):
                     cheapest = {"price": total, "currency": currency}
 
+            # Track max bookable seats across all offers (Amadeus caps at 9)
+            seats = offer.get("numberOfBookableSeats", 0)
+            if seats and seats > max_seats:
+                max_seats = seats
+
             for seg in offer.get("itineraries", [{}])[0].get("segments", []):
                 carrier = seg.get("carrierCode", "")
                 if carrier:
@@ -163,6 +172,7 @@ def check_availability(origin: str, dest: str, date: str) -> dict:
         result = {
             "available": len(offers) > 0,
             "offers_count": len(offers),
+            "seats_available": max_seats if max_seats > 0 else None,
             "cheapest": cheapest,
             "carriers": sorted(carriers),
             "error": None,
@@ -184,6 +194,7 @@ def check_availability(origin: str, dest: str, date: str) -> dict:
         return {
             "available": None,
             "offers_count": 0,
+            "seats_available": None,
             "cheapest": None,
             "carriers": [],
             "error": f"API error ({e.code})",
@@ -193,6 +204,7 @@ def check_availability(origin: str, dest: str, date: str) -> dict:
         return {
             "available": None,
             "offers_count": 0,
+            "seats_available": None,
             "cheapest": None,
             "carriers": [],
             "error": str(e),
