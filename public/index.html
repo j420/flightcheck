@@ -51,6 +51,12 @@
                 <button id="btn-scan-all" onclick="scanAll()">Scan All Major Airports</button>
             </div>
 
+            <div class="dest-search">
+                <label for="dest-input">Where do you want to go?</label>
+                <input type="text" id="dest-input" placeholder="e.g. LHR, London, DEL..." maxlength="40" autocomplete="off">
+                <button id="btn-dest-search" onclick="searchByDestination()">Find Flights</button>
+            </div>
+
             <div class="filters">
                 <label><input type="checkbox" id="filter-scheduled" checked> Scheduled</label>
                 <label><input type="checkbox" id="filter-estimated" checked> Estimated</label>
@@ -92,7 +98,7 @@
     </main>
 
     <footer>
-        <p>Data sourced from FlightRadar24 &amp; Google Flights. For educational/emergency use only.</p>
+        <p>Data sourced from FlightRadar24. For educational/emergency use only.</p>
         <p>Always verify availability directly on the airline website before booking.</p>
     </footer>
 
@@ -109,6 +115,7 @@
         let lastFetchedAt = null;
         let lastMode = null;
         let lastSearchIata = null;
+        let lastSearchDest = null;
         let lastData = null;
 
         // Pagination state per airport: { "DXB": 1, "AUH": 1, ... }
@@ -228,7 +235,10 @@
 
         function triggerRefresh() {
             if (lastMode === 'scan') scanAll();
-            else if (lastMode === 'search' && lastSearchIata) {
+            else if (lastMode === 'dest' && lastSearchDest) {
+                document.getElementById('dest-input').value = lastSearchDest;
+                searchByDestination();
+            } else if (lastMode === 'search' && lastSearchIata) {
                 document.getElementById('airport-select').value = lastSearchIata;
                 searchFlights();
             }
@@ -373,6 +383,122 @@
             checkAvailabilityForLoadedFlights();
             startAutoRefresh();
         }
+
+        // ---- Destination search ----
+
+        // Common destination airports for quick lookup from partial names
+        const DEST_ALIASES = {
+            'london': 'LHR', 'heathrow': 'LHR', 'gatwick': 'LGW',
+            'new york': 'JFK', 'jfk': 'JFK', 'newark': 'EWR',
+            'los angeles': 'LAX', 'la': 'LAX',
+            'paris': 'CDG', 'charles de gaulle': 'CDG',
+            'frankfurt': 'FRA', 'munich': 'MUC',
+            'istanbul': 'IST', 'ataturk': 'IST',
+            'delhi': 'DEL', 'new delhi': 'DEL',
+            'mumbai': 'BOM', 'bombay': 'BOM',
+            'bangalore': 'BLR', 'bengaluru': 'BLR',
+            'chennai': 'MAA', 'madras': 'MAA',
+            'hyderabad': 'HYD', 'kolkata': 'CCU', 'calcutta': 'CCU',
+            'kochi': 'COK', 'cochin': 'COK',
+            'colombo': 'CMB', 'sri lanka': 'CMB',
+            'manila': 'MNL', 'bangkok': 'BKK',
+            'singapore': 'SIN', 'kuala lumpur': 'KUL', 'kl': 'KUL',
+            'hong kong': 'HKG', 'tokyo': 'NRT', 'narita': 'NRT',
+            'sydney': 'SYD', 'melbourne': 'MEL',
+            'cairo': 'CAI', 'amman': 'AMM', 'jordan': 'AMM',
+            'beirut': 'BEY', 'lebanon': 'BEY',
+            'addis ababa': 'ADD', 'nairobi': 'NBO',
+            'johannesburg': 'JNB', 'lagos': 'LOS',
+            'islamabad': 'ISB', 'lahore': 'LHE', 'karachi': 'KHI',
+            'dhaka': 'DAC', 'kathmandu': 'KTM',
+            'toronto': 'YYZ', 'vancouver': 'YVR',
+            'amsterdam': 'AMS', 'zurich': 'ZRH', 'geneva': 'GVA',
+            'rome': 'FCO', 'milan': 'MXP', 'madrid': 'MAD',
+            'barcelona': 'BCN', 'lisbon': 'LIS', 'athens': 'ATH',
+            'moscow': 'SVO', 'tbilisi': 'TBS', 'baku': 'GYD',
+            'tashkent': 'TAS', 'tehran': 'IKA',
+        };
+
+        function resolveDestCode(input) {
+            const trimmed = input.trim();
+            // If it looks like an IATA code (3 letters), use it directly
+            if (/^[A-Za-z]{3}$/.test(trimmed)) return trimmed.toUpperCase();
+            // Try alias lookup
+            const lower = trimmed.toLowerCase();
+            if (DEST_ALIASES[lower]) return DEST_ALIASES[lower];
+            // Try partial match
+            for (const [alias, code] of Object.entries(DEST_ALIASES)) {
+                if (alias.includes(lower) || lower.includes(alias)) return code;
+            }
+            return null;
+        }
+
+        async function searchByDestination() {
+            const input = document.getElementById('dest-input').value.trim();
+            if (!input) { alert('Please enter a destination airport code or city name.'); return; }
+
+            const destCode = resolveDestCode(input);
+            if (!destCode) {
+                alert(`Could not find airport for "${input}". Try a 3-letter IATA code (e.g. LHR, DEL, JFK).`);
+                return;
+            }
+
+            clearError();
+            stopAutoRefresh();
+            lastMode = 'dest';
+            lastSearchDest = input;
+
+            const btn = document.getElementById('btn-dest-search');
+            btn.disabled = true;
+            btn.textContent = 'Searching...';
+            lastData = {};
+            lastFiltered = null;
+            const fc = document.getElementById('flights-container');
+            fc.querySelectorAll('[data-airport]').forEach(el => el.remove());
+            const em = fc.querySelector('.no-flights');
+            if (em) em.remove();
+
+            showStatus(`Searching all GCC airports for flights to ${destCode}...`);
+
+            try {
+                const resp = await fetchWithRetry(`${API_BASE}/search/destination/${destCode}`);
+                const data = await safeJson(resp);
+
+                if (data.error) {
+                    showError(`Error: ${data.error}`);
+                } else {
+                    lastFetchedAt = data.fetched_at || new Date().toISOString();
+                    updateTimestamp();
+
+                    for (const [airport, info] of Object.entries(data.airports || {})) {
+                        lastData[airport] = {
+                            airport_name: info.airport_name,
+                            city: info.city,
+                            flights: info.flights,
+                        };
+                        currentPage[airport] = 1;
+                    }
+
+                    if (data.total_flights === 0) {
+                        showStatus(`No flights found to ${destCode} from any GCC airport`, 0);
+                    } else {
+                        applyFiltersAndRender();
+                        checkAvailabilityForLoadedFlights();
+                    }
+                }
+            } catch (e) {
+                showError(`Network error: ${e.message}. Will retry automatically.`);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Find Flights';
+                startAutoRefresh();
+            }
+        }
+
+        // Allow pressing Enter in destination input
+        document.getElementById('dest-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') searchByDestination();
+        });
 
         // ---- Rendering ----
 
@@ -534,16 +660,18 @@
             if (avail.checking) return '<span class="avail-badge avail-checking">Checking...</span>';
             if (avail.available === null) return '<span class="avail-badge avail-unknown">--</span>';
             if (avail.available) {
-                const seatText = avail.seats_available
-                    ? `${avail.seats_available}${avail.seats_available >= 9 ? '+' : ''} seats`
-                    : 'Bookable';
+                let seatText;
+                if (avail.seats_available) {
+                    seatText = `${avail.seats_available}${avail.seats_available >= 9 ? '+' : ''} seats`;
+                } else if (avail.source === 'flight_status') {
+                    seatText = 'Likely Available';
+                } else {
+                    seatText = 'Bookable';
+                }
                 const price = avail.cheapest
                     ? `<span class="avail-price">from ${esc(avail.cheapest.currency)} ${esc(avail.cheapest.price)}</span>`
                     : '';
-                const srcTag = avail.source === 'google_flights'
-                    ? ' <span class="avail-source" title="via Google Flights">GF</span>'
-                    : '';
-                return `<span class="avail-badge avail-yes">${seatText}</span>${price}${srcTag}`;
+                return `<span class="avail-badge avail-yes">${seatText}</span>${price}`;
             }
             return '<span class="avail-badge avail-no">Sold Out</span>';
         }
@@ -817,10 +945,15 @@
             let completed = 0;
             for (const chunk of chunks) {
                 try {
+                    // Build flight_data map for status-based availability fallback
+                    const flightDataMap = {};
+                    for (const [airport, info] of Object.entries(lastData)) {
+                        flightDataMap[airport] = info.flights;
+                    }
                     const resp = await fetch(`${API_BASE}/availability/batch`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ routes: chunk }),
+                        body: JSON.stringify({ routes: chunk, flight_data: flightDataMap }),
                     });
                     if (resp.ok) {
                         const data = await safeJson(resp);
