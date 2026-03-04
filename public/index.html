@@ -57,6 +57,14 @@
                 <label><input type="checkbox" id="filter-delayed" checked> Delayed</label>
                 <label><input type="checkbox" id="filter-unknown" checked> Unknown Status</label>
                 <span class="filter-divider"></span>
+                <label for="filter-availability">Availability:</label>
+                <select id="filter-availability">
+                    <option value="all">All Flights</option>
+                    <option value="available">Seats Available</option>
+                    <option value="soldout">Sold Out</option>
+                    <option value="unknown">Unknown (--)</option>
+                </select>
+                <span class="filter-divider"></span>
                 <span id="avail-status-text" class="avail-status"></span>
             </div>
         </section>
@@ -84,7 +92,7 @@
     </main>
 
     <footer>
-        <p>Data sourced from FlightRadar24. For educational/emergency use only.</p>
+        <p>Data sourced from FlightRadar24 &amp; Google Flights. For educational/emergency use only.</p>
         <p>Always verify availability directly on the airline website before booking.</p>
     </footer>
 
@@ -372,25 +380,39 @@
             return Object.values(availabilityCache).some(a => !a.checking && a.available !== null);
         }
 
+        function getAvailabilityFilter() {
+            return document.getElementById('filter-availability').value;
+        }
+
+        function applyAvailabilityFilter(flights, airport) {
+            const filter = getAvailabilityFilter();
+            if (filter === 'all') return flights;
+
+            return flights.filter(f => {
+                const depDate = f.scheduled_departure.split(' ')[0] || '';
+                const key = `${airport}-${f.destination_iata}-${depDate}`;
+                const avail = availabilityCache[key];
+
+                if (filter === 'available') {
+                    return avail && avail.available === true;
+                } else if (filter === 'soldout') {
+                    return avail && avail.available === false;
+                } else if (filter === 'unknown') {
+                    return !avail || avail.available === null || avail.checking;
+                }
+                return true;
+            });
+        }
+
         function applyFiltersAndRender() {
             if (!lastData) return;
-
-            // Auto-filter to available-only once we have availability data
-            const showAvailOnly = availabilityEnabled && hasAvailabilityData();
 
             const filtered = {};
             let totalCount = 0;
             for (const [airport, info] of Object.entries(lastData)) {
                 let flights = filterFlights(info.flights);
                 flights = applyColumnFilters(flights);
-                if (showAvailOnly) {
-                    flights = flights.filter(f => {
-                        const depDate = f.scheduled_departure.split(' ')[0] || '';
-                        const key = `${airport}-${f.destination_iata}-${depDate}`;
-                        const avail = availabilityCache[key];
-                        return avail && avail.available === true;
-                    });
-                }
+                flights = applyAvailabilityFilter(flights, airport);
                 filtered[airport] = {
                     airport_name: info.airport_name,
                     city: info.city,
@@ -514,11 +536,14 @@
             if (avail.available) {
                 const seatText = avail.seats_available
                     ? `${avail.seats_available}${avail.seats_available >= 9 ? '+' : ''} seats`
-                    : 'Seats Open';
+                    : 'Bookable';
                 const price = avail.cheapest
                     ? `<span class="avail-price">from ${esc(avail.cheapest.currency)} ${esc(avail.cheapest.price)}</span>`
                     : '';
-                return `<span class="avail-badge avail-yes">${seatText}</span>${price}`;
+                const srcTag = avail.source === 'google_flights'
+                    ? ' <span class="avail-source" title="via Google Flights">GF</span>'
+                    : '';
+                return `<span class="avail-badge avail-yes">${seatText}</span>${price}${srcTag}`;
             }
             return '<span class="avail-badge avail-no">Sold Out</span>';
         }
@@ -704,15 +729,21 @@
             }
         }
 
-        // Re-filter when checkboxes change
+        // Re-filter when checkboxes or availability filter change
         document.querySelectorAll('.filters input[type="checkbox"]').forEach(cb => {
             cb.addEventListener('change', () => {
                 for (const k in currentPage) currentPage[k] = 1;
                 applyFiltersAndRender();
             });
         });
+        document.getElementById('filter-availability').addEventListener('change', () => {
+            for (const k in currentPage) currentPage[k] = 1;
+            applyFiltersAndRender();
+        });
 
         // ---- Seat availability checking ----
+
+        let availabilitySource = null; // 'amadeus' or 'google_flights'
 
         async function checkAvailabilityStatus() {
             try {
@@ -720,6 +751,7 @@
                 if (resp.ok) {
                     const data = await safeJson(resp);
                     availabilityEnabled = data.configured;
+                    availabilitySource = data.source || null;
                     if (availabilityEnabled) {
                         startAvailabilityRefresh();
                     }

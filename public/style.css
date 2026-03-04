@@ -152,6 +152,16 @@ button:disabled {
     accent-color: var(--accent);
 }
 
+.filters select {
+    padding: 0.3rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.85rem;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+}
+
 /* Status bar */
 .status-bar {
     background: var(--surface);
@@ -423,6 +433,13 @@ tbody td {
     color: var(--success);
     font-weight: 700;
     margin-top: 0.15rem;
+}
+
+.avail-source {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    margin-left: 0.2rem;
+    font-weight: 400;
 }
 
 .filter-divider {
