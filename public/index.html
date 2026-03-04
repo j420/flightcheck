@@ -11,121 +11,146 @@
     <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
-    <header>
-        <a href="/" class="home-link" title="Return to home page">
-            <svg class="home-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                <polyline points="9 22 9 12 15 12 15 22"></polyline>
-            </svg>
-        </a>
-        <h1>GCC Evacuation Flight Tracker</h1>
-        <p class="subtitle">Live commercial flights departing GCC airports to non-GCC destinations</p>
-        <p class="warning">Flight data may lag behind airline updates. Always verify status and availability directly with the airline before booking.</p>
-    </header>
+
+    <!-- Top bar: branding + live indicators -->
+    <nav class="topbar">
+        <div class="topbar-inner">
+            <div class="brand">
+                <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                <div>
+                    <span class="brand-title">EvacTracker</span>
+                    <span class="brand-region">GCC</span>
+                </div>
+            </div>
+            <div class="topbar-right">
+                <span id="connection-pill" class="pill pill-live hidden">
+                    <span class="live-dot"></span>
+                    <span id="connection-text">Live</span>
+                </span>
+                <span id="auto-refresh-info" class="pill pill-muted"></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Alert banner -->
+    <div class="alert-strip">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.168 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
+        Always verify status and availability directly with the airline before booking.
+    </div>
 
     <main>
-        <section class="controls">
-            <div class="airport-selector">
-                <label for="airport-select">Departure Airport:</label>
-                <select id="airport-select">
-                    <option value="">-- Select Airport --</option>
-                    <optgroup label="Major Hubs">
-                        <option value="DXB">Dubai (DXB) - Dubai International</option>
-                        <option value="AUH">Abu Dhabi (AUH) - Zayed International</option>
-                        <option value="DOH">Doha (DOH) - Hamad International</option>
-                        <option value="RUH">Riyadh (RUH) - King Khalid International</option>
-                        <option value="JED">Jeddah (JED) - King Abdulaziz International</option>
-                        <option value="KWI">Kuwait City (KWI) - Kuwait International</option>
-                        <option value="MCT">Muscat (MCT) - Muscat International</option>
-                        <option value="BAH">Manama (BAH) - Bahrain International</option>
-                        <option value="DMM">Dammam (DMM) - King Fahd International</option>
-                        <option value="SHJ">Sharjah (SHJ) - Sharjah International</option>
-                    </optgroup>
-                    <optgroup label="Other GCC Airports">
-                        <option value="DWC">Dubai (DWC) - Al Maktoum International</option>
-                        <option value="RKT">Ras Al Khaimah (RKT)</option>
-                        <option value="FJR">Fujairah (FJR)</option>
-                        <option value="MED">Medina (MED)</option>
-                        <option value="AHB">Abha (AHB)</option>
-                        <option value="TIF">Taif (TIF)</option>
-                        <option value="TUU">Tabuk (TUU)</option>
-                        <option value="GIZ">Jazan (GIZ)</option>
-                        <option value="SLL">Salalah (SLL)</option>
-                    </optgroup>
-                </select>
-                <button id="btn-search" onclick="searchFlights()">Search Departures</button>
-                <button id="btn-scan-all" onclick="scanAll()">Scan All Major Airports</button>
+        <!-- Search panel -->
+        <section class="search-panel">
+            <div class="search-tabs">
+                <button class="tab active" data-tab="departure" onclick="switchTab('departure')">
+                    <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"/></svg>
+                    From Airport
+                </button>
+                <button class="tab" data-tab="destination" onclick="switchTab('destination')">
+                    <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
+                    To Destination
+                </button>
+                <button class="tab" data-tab="scan" onclick="switchTab('scan')">
+                    <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>
+                    Scan All
+                </button>
             </div>
 
-            <div class="dest-search">
-                <label for="dest-input">Where do you want to go?</label>
-                <input type="text" id="dest-input" placeholder="e.g. LHR, London, DEL..." maxlength="40" autocomplete="off">
-                <button id="btn-dest-search" onclick="searchByDestination()">Find Flights</button>
-            </div>
+            <div class="search-body">
+                <!-- Departure tab -->
+                <div class="tab-content active" id="tab-departure">
+                    <select id="airport-select" class="input-field">
+                        <option value="">Select departure airport...</option>
+                        <optgroup label="Major Hubs">
+                            <option value="DXB">Dubai (DXB) - Dubai International</option>
+                            <option value="AUH">Abu Dhabi (AUH) - Zayed International</option>
+                            <option value="DOH">Doha (DOH) - Hamad International</option>
+                            <option value="RUH">Riyadh (RUH) - King Khalid International</option>
+                            <option value="JED">Jeddah (JED) - King Abdulaziz International</option>
+                            <option value="KWI">Kuwait City (KWI) - Kuwait International</option>
+                            <option value="MCT">Muscat (MCT) - Muscat International</option>
+                            <option value="BAH">Manama (BAH) - Bahrain International</option>
+                            <option value="DMM">Dammam (DMM) - King Fahd International</option>
+                            <option value="SHJ">Sharjah (SHJ) - Sharjah International</option>
+                        </optgroup>
+                        <optgroup label="Other GCC Airports">
+                            <option value="DWC">Dubai (DWC) - Al Maktoum International</option>
+                            <option value="RKT">Ras Al Khaimah (RKT)</option>
+                            <option value="FJR">Fujairah (FJR)</option>
+                            <option value="MED">Medina (MED)</option>
+                            <option value="AHB">Abha (AHB)</option>
+                            <option value="TIF">Taif (TIF)</option>
+                            <option value="TUU">Tabuk (TUU)</option>
+                            <option value="GIZ">Jazan (GIZ)</option>
+                            <option value="SLL">Salalah (SLL)</option>
+                        </optgroup>
+                    </select>
+                    <button id="btn-search" class="btn-primary" onclick="searchFlights()">
+                        <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+                        Search Departures
+                    </button>
+                </div>
 
-            <div class="filters">
-                <label><input type="checkbox" id="filter-scheduled" checked> Scheduled</label>
-                <label><input type="checkbox" id="filter-estimated" checked> Estimated</label>
-                <label><input type="checkbox" id="filter-delayed"> Delayed</label>
-                <label><input type="checkbox" id="filter-unknown"> Unknown Status</label>
-                <span class="filter-divider"></span>
-                <label for="filter-availability">Availability:</label>
-                <select id="filter-availability">
-                    <option value="all">All Flights</option>
-                    <option value="available">Seats Available</option>
-                    <option value="unknown">Unknown</option>
-                </select>
-                <span class="filter-divider"></span>
-                <div class="dropdown-filter" id="airline-filter-wrapper">
-                    <button type="button" class="dropdown-filter-btn" onclick="toggleDropdown('airline')">Airlines <span class="dropdown-arrow">&#9662;</span></button>
-                    <div class="dropdown-filter-panel hidden" id="airline-filter-panel">
-                        <div class="dropdown-filter-actions">
-                            <a href="#" onclick="selectAllDropdown('airline', true); return false;">All</a>
-                            <a href="#" onclick="selectAllDropdown('airline', false); return false;">None</a>
-                        </div>
-                        <div class="dropdown-filter-list" id="airline-filter-list"></div>
-                    </div>
+                <!-- Destination tab -->
+                <div class="tab-content" id="tab-destination">
+                    <input type="text" id="dest-input" class="input-field" placeholder="City or IATA code (e.g. London, LHR, DEL...)" maxlength="40" autocomplete="off">
+                    <button id="btn-dest-search" class="btn-primary" onclick="searchByDestination()">
+                        <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+                        Find Flights
+                    </button>
                 </div>
-                <div class="dropdown-filter" id="dest-filter-wrapper">
-                    <button type="button" class="dropdown-filter-btn" onclick="toggleDropdown('dest')">Destinations <span class="dropdown-arrow">&#9662;</span></button>
-                    <div class="dropdown-filter-panel hidden" id="dest-filter-panel">
-                        <div class="dropdown-filter-actions">
-                            <a href="#" onclick="selectAllDropdown('dest', true); return false;">All</a>
-                            <a href="#" onclick="selectAllDropdown('dest', false); return false;">None</a>
-                        </div>
-                        <div class="dropdown-filter-list" id="dest-filter-list"></div>
-                    </div>
+
+                <!-- Scan tab -->
+                <div class="tab-content" id="tab-scan">
+                    <p class="scan-desc">Search all 10 major GCC airports simultaneously for evacuation flights.</p>
+                    <button id="btn-scan-all" class="btn-danger" onclick="scanAll()">
+                        <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>
+                        Scan All Major Airports
+                    </button>
                 </div>
-                <span class="filter-divider"></span>
-                <span id="avail-status-text" class="avail-status"></span>
             </div>
         </section>
 
-        <section id="status-bar" class="status-bar hidden">
+        <!-- Filter bar -->
+        <section class="filter-bar" id="filter-bar">
+            <div class="status-pills">
+                <button class="status-pill active" data-status="scheduled" onclick="toggleStatusPill(this)">Scheduled</button>
+                <button class="status-pill active" data-status="estimated" onclick="toggleStatusPill(this)">Estimated</button>
+                <button class="status-pill" data-status="delayed" onclick="toggleStatusPill(this)">Delayed</button>
+                <button class="status-pill" data-status="unknown" onclick="toggleStatusPill(this)">Unknown</button>
+            </div>
+            <div class="filter-meta">
+                <select id="filter-availability" class="filter-select">
+                    <option value="all">All Flights</option>
+                    <option value="available">Seats Available</option>
+                    <option value="unknown">Unknown Availability</option>
+                </select>
+                <span id="avail-status-text" class="meta-text"></span>
+            </div>
+        </section>
+
+        <!-- Status row -->
+        <section id="status-bar" class="status-row hidden">
             <div class="status-left">
-                <span id="status-text">Loading...</span>
-                <span id="flight-count"></span>
+                <span id="status-text"></span>
+                <span id="flight-count" class="flight-count"></span>
             </div>
             <div class="status-right">
-                <span id="last-updated"></span>
-                <span id="auto-refresh-info"></span>
+                <span id="last-updated" class="meta-text"></span>
             </div>
         </section>
 
         <div id="error-banner" class="error-banner hidden"></div>
-        <div id="connection-status" class="connection-status hidden">
-            <span class="connection-dot"></span>
-            <span id="connection-text"></span>
-        </div>
 
-        <section id="results" class="results">
+        <!-- Results -->
+        <section id="results">
             <div id="flights-container"></div>
         </section>
     </main>
 
     <footer>
-        <p>Data sourced from FlightRadar24. For educational/emergency use only.</p>
-        <p>Always verify availability directly on the airline website before booking.</p>
+        <p>Data sourced from FlightRadar24 &middot; For emergency/educational use only</p>
+        <p>Always verify directly with the airline before booking.</p>
     </footer>
 
     <script>
@@ -144,27 +169,30 @@
         let lastSearchDest = null;
         let lastData = null;
 
-        // Pagination state per airport: { "DXB": 1, "AUH": 1, ... }
         const currentPage = {};
-
-        // Last computed filtered data for rendering
         let lastFiltered = null;
 
         // Availability state
-        // Key: "ORIGIN-DEST-DATE", Value: { available: bool|null, cheapest: {price,currency}|null, checking: bool }
         const availabilityCache = {};
-        let availabilityEnabled = false; // whether Amadeus is configured
+        let availabilityEnabled = false;
         let availabilityChecking = false;
         let availRefreshTimer = null;
-        const AVAIL_REFRESH_MS = 120000; // refresh availability every 2 minutes
+        const AVAIL_REFRESH_MS = 120000;
 
-        // AviationStack verification state (cancellation detection)
-        // Key: flight_number, Value: { status, is_cancelled, source }
+        // AviationStack verification state
         const verificationCache = {};
         let verificationEnabled = false;
         let verificationChecking = false;
         let verifyRefreshTimer = null;
-        const VERIFY_REFRESH_MS = 900000; // 15 minutes — conserve free tier quota
+        const VERIFY_REFRESH_MS = 900000;
+
+        // ---- Tab switching ----
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById(`tab-${tab}`).classList.add('active');
+        }
 
         // ---- Fetch with timeout and retry ----
 
@@ -188,11 +216,9 @@
                 try {
                     const resp = await fetchWithTimeout(url);
                     if (resp.ok) return resp;
-                    // Return 4xx/5xx on last attempt so caller can read error JSON
                     lastResp = resp;
                     if (resp.status >= 400 && resp.status < 500) return resp;
                     if (i >= retries) return resp;
-                    // Retry 5xx
                 } catch (e) {
                     lastErr = e;
                 }
@@ -219,7 +245,7 @@
         function showStatus(msg, count) {
             const bar = document.getElementById('status-bar');
             document.getElementById('status-text').textContent = msg;
-            document.getElementById('flight-count').textContent = count !== undefined ? `${count} flights found` : '';
+            document.getElementById('flight-count').textContent = count !== undefined ? `${count} flights` : '';
             bar.classList.remove('hidden');
         }
 
@@ -249,9 +275,9 @@
                 if (countdownSeconds <= 0) {
                     stopAutoRefresh();
                     triggerRefresh();
-                } else {
-                    updateCountdown();
+                    return;
                 }
+                updateCountdown();
             }, 1000);
         }
 
@@ -264,7 +290,7 @@
 
         function updateCountdown() {
             const el = document.getElementById('auto-refresh-info');
-            if (el) el.textContent = `Auto-refresh in ${countdownSeconds}s`;
+            if (el) el.textContent = `${countdownSeconds}s`;
         }
 
         function triggerRefresh() {
@@ -282,11 +308,16 @@
 
         function getStatusFilters() {
             const filters = [];
-            if (document.getElementById('filter-scheduled').checked) filters.push('scheduled');
-            if (document.getElementById('filter-estimated').checked) filters.push('estimated');
-            if (document.getElementById('filter-delayed').checked) filters.push('delayed');
-            if (document.getElementById('filter-unknown').checked) filters.push('unknown');
+            document.querySelectorAll('.status-pill.active').forEach(pill => {
+                filters.push(pill.dataset.status);
+            });
             return filters;
+        }
+
+        function toggleStatusPill(el) {
+            el.classList.toggle('active');
+            for (const k in currentPage) currentPage[k] = 1;
+            applyFiltersAndRender();
         }
 
         function filterFlights(flights) {
@@ -316,130 +347,14 @@
             });
         }
 
-        // Debounced column filter handler
         let filterDebounce = null;
         function onColumnFilter(col, value) {
             columnFilters[col] = value.toLowerCase().trim();
-            // Reset all pages to 1 when filter changes
             for (const k in currentPage) currentPage[k] = 1;
             if (filterDebounce) clearTimeout(filterDebounce);
             filterDebounce = setTimeout(() => {
                 applyFiltersAndRender();
             }, 150);
-        }
-
-        // ---- Airline & Destination dropdown checkbox filters ----
-
-        // Sets of selected values (null = all selected, i.e. no filter active)
-        let selectedAirlines = null; // null means "all"
-        let selectedDests = null;    // null means "all"
-
-        function toggleDropdown(type) {
-            const panel = document.getElementById(type === 'airline' ? 'airline-filter-panel' : 'dest-filter-panel');
-            const wasHidden = panel.classList.contains('hidden');
-            // Close all panels first
-            document.querySelectorAll('.dropdown-filter-panel').forEach(p => p.classList.add('hidden'));
-            if (wasHidden) panel.classList.remove('hidden');
-        }
-
-        // Close dropdowns when clicking outside
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.dropdown-filter')) {
-                document.querySelectorAll('.dropdown-filter-panel').forEach(p => p.classList.add('hidden'));
-            }
-        });
-
-        function selectAllDropdown(type, checked) {
-            const list = document.getElementById(type === 'airline' ? 'airline-filter-list' : 'dest-filter-list');
-            list.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = checked; });
-            onDropdownFilterChange(type);
-        }
-
-        function onDropdownFilterChange(type) {
-            const list = document.getElementById(type === 'airline' ? 'airline-filter-list' : 'dest-filter-list');
-            const boxes = list.querySelectorAll('input[type="checkbox"]');
-            const checked = [...boxes].filter(cb => cb.checked).map(cb => cb.value);
-            const allChecked = boxes.length > 0 && checked.length === boxes.length;
-            const noneChecked = checked.length === 0;
-
-            if (type === 'airline') {
-                selectedAirlines = allChecked ? null : new Set(checked);
-            } else {
-                selectedDests = allChecked ? null : new Set(checked);
-            }
-
-            // Update button label to show selection state
-            const btn = document.querySelector(`#${type === 'airline' ? 'airline' : 'dest'}-filter-wrapper .dropdown-filter-btn`);
-            const label = type === 'airline' ? 'Airlines' : 'Destinations';
-            if (allChecked) {
-                btn.innerHTML = `${label} (All) <span class="dropdown-arrow">&#9662;</span>`;
-            } else if (noneChecked) {
-                btn.innerHTML = `${label} (None) <span class="dropdown-arrow">&#9662;</span>`;
-            } else {
-                btn.innerHTML = `${label} (${checked.length}/${boxes.length}) <span class="dropdown-arrow">&#9662;</span>`;
-            }
-
-            for (const k in currentPage) currentPage[k] = 1;
-            applyFiltersAndRender();
-        }
-
-        function applyDropdownFilters(flights) {
-            return flights.filter(f => {
-                if (selectedAirlines && !selectedAirlines.has(f.airline_name)) return false;
-                if (selectedDests && !selectedDests.has(f.destination_iata)) return false;
-                return true;
-            });
-        }
-
-        // Rebuild the airline & destination checkbox lists from current data
-        function rebuildDropdownFilters() {
-            if (!lastData) return;
-
-            const airlines = new Set();
-            const dests = new Map(); // iata -> name
-
-            for (const info of Object.values(lastData)) {
-                for (const f of info.flights) {
-                    if (f.airline_name) airlines.add(f.airline_name);
-                    if (f.destination_iata) dests.set(f.destination_iata, f.destination_name || f.destination_iata);
-                }
-            }
-
-            // Build airline checkboxes
-            const airlineList = document.getElementById('airline-filter-list');
-            const prevAirlines = selectedAirlines;
-            airlineList.innerHTML = [...airlines].sort().map(name => {
-                const checked = !prevAirlines || prevAirlines.has(name) ? 'checked' : '';
-                return `<label><input type="checkbox" value="${esc(name)}" ${checked} onchange="onDropdownFilterChange('airline')"> ${esc(name)}</label>`;
-            }).join('');
-
-            // Build destination checkboxes
-            const destList = document.getElementById('dest-filter-list');
-            const prevDests = selectedDests;
-            const sortedDests = [...dests.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-            destList.innerHTML = sortedDests.map(([iata, name]) => {
-                const checked = !prevDests || prevDests.has(iata) ? 'checked' : '';
-                return `<label><input type="checkbox" value="${esc(iata)}" ${checked} onchange="onDropdownFilterChange('dest')"> ${esc(iata)} — ${esc(name)}</label>`;
-            }).join('');
-
-            // Sync button labels with current checkbox state (without re-triggering filter)
-            syncDropdownLabel('airline');
-            syncDropdownLabel('dest');
-        }
-
-        function syncDropdownLabel(type) {
-            const list = document.getElementById(type === 'airline' ? 'airline-filter-list' : 'dest-filter-list');
-            const boxes = list.querySelectorAll('input[type="checkbox"]');
-            const checked = [...boxes].filter(cb => cb.checked);
-            const btn = document.querySelector(`#${type === 'airline' ? 'airline' : 'dest'}-filter-wrapper .dropdown-filter-btn`);
-            const label = type === 'airline' ? 'Airlines' : 'Destinations';
-            if (boxes.length === 0 || checked.length === boxes.length) {
-                btn.innerHTML = `${label} (All) <span class="dropdown-arrow">&#9662;</span>`;
-            } else if (checked.length === 0) {
-                btn.innerHTML = `${label} (None) <span class="dropdown-arrow">&#9662;</span>`;
-            } else {
-                btn.innerHTML = `${label} (${checked.length}/${boxes.length}) <span class="dropdown-arrow">&#9662;</span>`;
-            }
         }
 
         // ---- Data fetching ----
@@ -456,7 +371,7 @@
 
             const btn = document.getElementById('btn-search');
             btn.disabled = true;
-            btn.textContent = 'Searching...';
+            btn.innerHTML = '<span class="spinner"></span> Searching...';
             showStatus(`Fetching departures from ${iata}...`);
 
             try {
@@ -470,7 +385,6 @@
                     currentPage[iata] = 1;
                     lastFetchedAt = data.fetched_at || new Date().toISOString();
                     updateTimestamp();
-                    rebuildDropdownFilters();
                     applyFiltersAndRender();
                     checkAvailabilityForLoadedFlights();
                     verifyLoadedFlights();
@@ -479,7 +393,7 @@
                 showError(`Network error: ${e.message}. Will retry automatically.`);
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Search Departures';
+                btn.innerHTML = '<svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg> Search Departures';
                 startAutoRefresh();
             }
         }
@@ -493,12 +407,9 @@
 
             const btn = document.getElementById('btn-scan-all');
             btn.disabled = true;
-            btn.textContent = 'Scanning...';
+            btn.innerHTML = '<span class="spinner"></span> Scanning...';
             lastData = {};
             lastFiltered = null;
-            selectedAirlines = null;
-            selectedDests = null;
-            // Clear all existing airport sections for a fresh scan
             const fc = document.getElementById('flights-container');
             fc.querySelectorAll('[data-airport]').forEach(el => el.remove());
             const em = fc.querySelector('.no-flights');
@@ -523,13 +434,12 @@
                 }
                 completed++;
                 showStatus(`Scanning airports... ${completed}/${total} done`);
-                rebuildDropdownFilters();
                 applyFiltersAndRender();
             });
 
             await Promise.all(promises);
             btn.disabled = false;
-            btn.textContent = 'Scan All Major Airports';
+            btn.innerHTML = '<svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg> Scan All Major Airports';
             if (failed > 0) showError(`${failed} airport(s) failed to load. Showing available data. Will auto-refresh.`);
             updateTimestamp();
             applyFiltersAndRender();
@@ -540,7 +450,6 @@
 
         // ---- Destination search ----
 
-        // Common destination airports for quick lookup from partial names
         const DEST_ALIASES = {
             'london': 'LHR', 'heathrow': 'LHR', 'gatwick': 'LGW',
             'new york': 'JFK', 'jfk': 'JFK', 'newark': 'EWR',
@@ -559,28 +468,20 @@
             'singapore': 'SIN', 'kuala lumpur': 'KUL', 'kl': 'KUL',
             'hong kong': 'HKG', 'tokyo': 'NRT', 'narita': 'NRT',
             'sydney': 'SYD', 'melbourne': 'MEL',
-            'cairo': 'CAI', 'amman': 'AMM', 'jordan': 'AMM',
-            'beirut': 'BEY', 'lebanon': 'BEY',
-            'addis ababa': 'ADD', 'nairobi': 'NBO',
-            'johannesburg': 'JNB', 'lagos': 'LOS',
-            'islamabad': 'ISB', 'lahore': 'LHE', 'karachi': 'KHI',
-            'dhaka': 'DAC', 'kathmandu': 'KTM',
             'toronto': 'YYZ', 'vancouver': 'YVR',
-            'amsterdam': 'AMS', 'zurich': 'ZRH', 'geneva': 'GVA',
-            'rome': 'FCO', 'milan': 'MXP', 'madrid': 'MAD',
-            'barcelona': 'BCN', 'lisbon': 'LIS', 'athens': 'ATH',
-            'moscow': 'SVO', 'tbilisi': 'TBS', 'baku': 'GYD',
-            'tashkent': 'TAS', 'tehran': 'IKA',
+            'johannesburg': 'JNB', 'nairobi': 'NBO',
+            'addis ababa': 'ADD', 'cairo': 'CAI',
+            'amman': 'AMM', 'beirut': 'BEY',
+            'karachi': 'KHI', 'lahore': 'LHE', 'islamabad': 'ISB',
+            'dhaka': 'DAC', 'kathmandu': 'KTM',
+            'jakarta': 'CGK', 'cebu': 'CEB',
         };
 
         function resolveDestCode(input) {
-            const trimmed = input.trim();
-            // If it looks like an IATA code (3 letters), use it directly
-            if (/^[A-Za-z]{3}$/.test(trimmed)) return trimmed.toUpperCase();
-            // Try alias lookup
-            const lower = trimmed.toLowerCase();
+            const trimmed = input.trim().toUpperCase();
+            if (/^[A-Z]{3}$/.test(trimmed)) return trimmed;
+            const lower = input.trim().toLowerCase();
             if (DEST_ALIASES[lower]) return DEST_ALIASES[lower];
-            // Try partial match
             for (const [alias, code] of Object.entries(DEST_ALIASES)) {
                 if (alias.includes(lower) || lower.includes(alias)) return code;
             }
@@ -604,10 +505,8 @@
 
             const btn = document.getElementById('btn-dest-search');
             btn.disabled = true;
-            btn.textContent = 'Searching...';
+            btn.innerHTML = '<span class="spinner"></span> Searching...';
             lastData = {};
-            selectedAirlines = null;
-            selectedDests = null;
             lastFiltered = null;
             const fc = document.getElementById('flights-container');
             fc.querySelectorAll('[data-airport]').forEach(el => el.remove());
@@ -638,7 +537,6 @@
                     if (data.total_flights === 0) {
                         showStatus(`No flights found to ${destCode} from any GCC airport`, 0);
                     } else {
-                        rebuildDropdownFilters();
                         applyFiltersAndRender();
                         checkAvailabilityForLoadedFlights();
                         verifyLoadedFlights();
@@ -648,12 +546,11 @@
                 showError(`Network error: ${e.message}. Will retry automatically.`);
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Find Flights';
+                btn.innerHTML = '<svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg> Find Flights';
                 startAutoRefresh();
             }
         }
 
-        // Allow pressing Enter in destination input
         document.getElementById('dest-input').addEventListener('keydown', (e) => {
             if (e.key === 'Enter') searchByDestination();
         });
@@ -671,12 +568,10 @@
         function applyAvailabilityFilter(flights, airport) {
             const filter = getAvailabilityFilter();
             if (filter === 'all') return flights;
-
             return flights.filter(f => {
                 const depDate = f.scheduled_departure.split(' ')[0] || '';
                 const key = `${airport}-${f.destination_iata}-${depDate}`;
                 const avail = availabilityCache[key];
-
                 if (filter === 'available') {
                     return avail && avail.available === true;
                 } else if (filter === 'unknown') {
@@ -688,13 +583,11 @@
 
         function applyFiltersAndRender() {
             if (!lastData) return;
-
             const filtered = {};
             let totalCount = 0;
             for (const [airport, info] of Object.entries(lastData)) {
                 let flights = filterFlights(info.flights);
                 flights = applyColumnFilters(flights);
-                flights = applyDropdownFilters(flights);
                 flights = applyAvailabilityFilter(flights, airport);
                 filtered[airport] = {
                     airport_name: info.airport_name,
@@ -704,16 +597,13 @@
                 };
                 totalCount += flights.length;
             }
-
             lastFiltered = filtered;
             const airportNames = Object.keys(filtered).join(', ');
-            showStatus(`Showing results for: ${airportNames}`, totalCount);
+            showStatus(`${airportNames}`, totalCount);
             renderFlights(filtered);
         }
 
         // ---- Google Flights protobuf URL builder ----
-        // Builds the tfs= parameter that Google Flights uses to pre-fill
-        // origin, destination, and date in its search form.
 
         function _pbVarint(val) {
             const b = [];
@@ -733,31 +623,18 @@
         }
 
         function buildGoogleFlightsUrl(originIata, destIata, dateStr) {
-            // Airport proto: { 1: int type=1 (IATA), 2: string code }
             const orig = [..._pbInt(1, 1), ..._pbStr(2, originIata)];
             const dest = [..._pbInt(1, 1), ..._pbStr(2, destIata)];
-            // Slice proto: { 2: string date, 13: msg origin, 14: msg dest }
             const slice = [..._pbStr(2, dateStr), ..._pbMsg(13, orig), ..._pbMsg(14, dest)];
-            // Root proto: { 3: msg slice }
             const root = _pbMsg(3, slice);
             const b64 = btoa(String.fromCharCode(...root))
                 .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
             return `https://www.google.com/travel/flights/search?tfs=${b64}&hl=en`;
         }
 
-        // Airline ICAO → deeplink builder or booking homepage URL.
-        // Most airlines use JavaScript SPAs that ignore URL query params.
-        // Where a working deeplink format has been confirmed (community-sourced
-        // or via developer docs), we use it. Otherwise, link to the booking
-        // homepage. Google Flights (protobuf URL) is always the primary "Book Now".
-        //
-        // Airlines with confirmed/likely-working deeplinks return a function.
-        // Airlines without return a static homepage string.
         const AIRLINE_LINKS = {
-            // Qatar Airways: deepLinkLoader.xhtml endpoint (community-documented)
             QTR: (o, d, date) =>
                 `https://booking.qatarairways.com/nsp/views/deepLinkLoader.xhtml?origin=${o}&destination=${d}&departureDate=${date}&adults=1&children=0&infants=0&cabinClass=Y&tripType=O`,
-            // All others: booking homepage (no confirmed deeplink params)
             UAE: 'https://www.emirates.com/flights/book',
             ETD: 'https://www.etihad.com/en/book',
             SVA: 'https://www.saudia.com/booking',
@@ -799,16 +676,12 @@
             return entry;
         }
 
-        // KAYAK has a well-documented public URL format that reliably
-        // prefills origin, destination, and date.
         function buildKayakUrl(origin, dest, date) {
             return `https://www.kayak.com/flights/${origin}-${dest}/${date}?sort=bestflight_a`;
         }
 
-        // Skyscanner deep-link: reliable URL format with good GCC route coverage.
         function buildSkyscannerUrl(origin, dest, date) {
-            // Skyscanner uses YYMMDD format
-            const d = date.replace(/-/g, '').slice(2); // "2026-03-04" -> "260304"
+            const d = date.replace(/-/g, '').slice(2);
             return `https://www.skyscanner.com/transport/flights/${origin.toLowerCase()}/${dest.toLowerCase()}/${d}/`;
         }
 
@@ -817,7 +690,6 @@
             const gfUrl = buildGoogleFlightsUrl(airport, flight.destination_iata, depDate);
 
             if (!availabilityEnabled) {
-                // No Amadeus — show verify link so users can check on Google Flights
                 return `<a href="${esc(gfUrl)}" target="_blank" rel="noopener" class="avail-badge avail-verify" title="Verify availability on Google Flights">Verify</a>`;
             }
 
@@ -836,7 +708,6 @@
                     : '';
                 return `<span class="avail-badge avail-yes">${seatText}</span>${price}`;
             }
-            // No seats — don't show "Sold Out", just show verify link
             return `<a href="${esc(gfUrl)}" target="_blank" rel="noopener" class="avail-badge avail-verify">Verify</a>`;
         }
 
@@ -857,18 +728,23 @@
                 const row = document.createElement('tr');
                 if (isCancelled) row.classList.add('flight-cancelled');
                 row.innerHTML = `
-                    <td class="flight-number">${esc(flight.flight_number)}</td>
-                    <td>${esc(flight.airline_name)}</td>
-                    <td><strong>${esc(flight.destination_iata)}</strong><br><span class="dest-name">${esc(flight.destination_name)}</span></td>
-                    <td>${esc(flight.scheduled_departure)}</td>
-                    <td><span class="status-badge ${statusClass}">${esc(statusText)}</span>${isCancelled ? '<br><span class="verified-tag">Verified</span>' : ''}</td>
-                    <td>${esc(flight.aircraft_type || '-')}</td>
-                    <td class="avail-cell">${getAvailabilityHtml(airport, flight)}</td>
-                    <td class="action-cell">
-                        <a href="${esc(gfUrl)}" target="_blank" rel="noopener" class="btn-book">Google Flights</a>
-                        <a href="${esc(kayakUrl)}" target="_blank" rel="noopener" class="btn-book">KAYAK</a>
-                        <a href="${esc(skyscannerUrl)}" target="_blank" rel="noopener" class="btn-book">Skyscanner</a>
-                        ${airlineUrl ? `<a href="${esc(airlineUrl)}" target="_blank" rel="noopener" class="btn-airline">Airline Site</a>` : ''}
+                    <td>
+                        <span class="cell-flight-num">${esc(flight.flight_number)}</span>
+                        <span class="cell-airline">${esc(flight.airline_name)}</span>
+                    </td>
+                    <td>
+                        <span class="cell-dest-code">${esc(flight.destination_iata)}</span>
+                        <span class="cell-dest-name">${esc(flight.destination_name)}</span>
+                    </td>
+                    <td class="cell-time">${esc(flight.scheduled_departure)}</td>
+                    <td><span class="status-badge ${statusClass}">${esc(statusText)}</span>${isCancelled ? '<span class="verified-tag">Verified</span>' : ''}</td>
+                    <td class="cell-aircraft">${esc(flight.aircraft_type || '\u2014')}</td>
+                    <td class="cell-avail">${getAvailabilityHtml(airport, flight)}</td>
+                    <td class="cell-actions">
+                        <a href="${esc(gfUrl)}" target="_blank" rel="noopener" class="btn-action btn-google" title="Google Flights">Google</a>
+                        <a href="${esc(kayakUrl)}" target="_blank" rel="noopener" class="btn-action btn-kayak" title="KAYAK">Kayak</a>
+                        <a href="${esc(skyscannerUrl)}" target="_blank" rel="noopener" class="btn-action btn-sky" title="Skyscanner">Sky</a>
+                        ${airlineUrl ? `<a href="${esc(airlineUrl)}" target="_blank" rel="noopener" class="btn-action btn-airline" title="Airline website">Airline</a>` : ''}
                     </td>
                 `;
                 tbody.appendChild(row);
@@ -882,17 +758,17 @@
             pager.className = 'pagination';
 
             const prevBtn = document.createElement('button');
-            prevBtn.textContent = 'Previous';
+            prevBtn.textContent = '\u2190 Prev';
             prevBtn.className = 'btn-page';
             prevBtn.disabled = page <= 1;
             prevBtn.addEventListener('click', () => { currentPage[airport]--; renderFlights(lastFiltered); });
 
             const pageInfo = document.createElement('span');
             pageInfo.className = 'page-info';
-            pageInfo.textContent = `Page ${page} of ${totalPages} (${totalFlights} flights)`;
+            pageInfo.textContent = `${page} / ${totalPages}`;
 
             const nextBtn = document.createElement('button');
-            nextBtn.textContent = 'Next';
+            nextBtn.textContent = 'Next \u2192';
             nextBtn.className = 'btn-page';
             nextBtn.disabled = page >= totalPages;
             nextBtn.addEventListener('click', () => { currentPage[airport]++; renderFlights(lastFiltered); });
@@ -905,55 +781,68 @@
 
         function createAirportSection(airport, info) {
             const section = document.createElement('div');
-            section.className = 'airport-section';
+            section.className = 'airport-card';
             section.dataset.airport = airport;
 
-            const header = document.createElement('h2');
-            header.textContent = `${info.city} (${airport}) - ${info.airport_name}`;
+            const header = document.createElement('div');
+            header.className = 'airport-card-header';
+            header.innerHTML = `
+                <div class="airport-card-title">
+                    <span class="airport-iata">${esc(airport)}</span>
+                    <span class="airport-detail">${esc(info.city)} &middot; ${esc(info.airport_name)}</span>
+                </div>
+                <span class="airport-flight-count"></span>
+            `;
             section.appendChild(header);
 
-            const summary = document.createElement('p');
-            summary.className = 'flight-summary';
-            section.appendChild(summary);
+            const tableWrap = document.createElement('div');
+            tableWrap.className = 'table-wrap';
 
-            // Table with stable filter row
             const table = document.createElement('table');
             const thead = document.createElement('thead');
 
             const headerRow = document.createElement('tr');
-            const cols = ['Flight','Airline','Destination','Departure','Status','Aircraft','Availability','Action'];
-            cols.forEach(h => {
+            const cols = [
+                { label: 'Flight / Airline', key: 'flight' },
+                { label: 'Destination',      key: 'destination' },
+                { label: 'Departure',        key: 'departure' },
+                { label: 'Status',           key: 'status' },
+                { label: 'Aircraft',         key: 'aircraft' },
+                { label: 'Avail.',           key: null },
+                { label: 'Book',             key: null },
+            ];
+            cols.forEach(c => {
                 const th = document.createElement('th');
-                th.textContent = h;
+                if (c.key) {
+                    const wrap = document.createElement('div');
+                    wrap.className = 'th-inner';
+                    const lbl = document.createElement('span');
+                    lbl.textContent = c.label;
+                    wrap.appendChild(lbl);
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.placeholder = 'Filter...';
+                    input.className = 'col-filter';
+                    input.dataset.col = c.key === 'flight' ? 'flight' : c.key;
+                    // For combined flight/airline column, filter on flight number
+                    if (c.key === 'flight') input.dataset.col = 'flight';
+                    input.value = columnFilters[input.dataset.col] || '';
+                    input.addEventListener('input', (e) => {
+                        onColumnFilter(e.target.dataset.col, e.target.value);
+                    });
+                    wrap.appendChild(input);
+                    th.appendChild(wrap);
+                } else {
+                    th.textContent = c.label;
+                }
                 headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
-
-            const filterRow = document.createElement('tr');
-            filterRow.className = 'filter-row';
-            ['flight','airline','destination','departure','status','aircraft'].forEach(col => {
-                const th = document.createElement('th');
-                const input = document.createElement('input');
-                input.type = 'text';
-                input.placeholder = 'Filter...';
-                input.className = 'col-filter';
-                input.dataset.col = col;
-                input.value = columnFilters[col];
-                input.addEventListener('input', (e) => {
-                    onColumnFilter(e.target.dataset.col, e.target.value);
-                });
-                th.appendChild(input);
-                filterRow.appendChild(th);
-            });
-            filterRow.appendChild(document.createElement('th')); // Availability
-            filterRow.appendChild(document.createElement('th')); // Action
-            thead.appendChild(filterRow);
             table.appendChild(thead);
-
-            // Empty tbody placeholder
             table.appendChild(document.createElement('tbody'));
-            section.appendChild(table);
 
+            tableWrap.appendChild(table);
+            section.appendChild(tableWrap);
             return section;
         }
 
@@ -972,41 +861,34 @@
                 const startIdx = (page - 1) * ROWS_PER_PAGE;
                 const pageFlights = info.flights.slice(startIdx, startIdx + ROWS_PER_PAGE);
 
-                // Find or create the section
                 let section = container.querySelector(`[data-airport="${airport}"]`);
                 if (!section) {
                     section = createAirportSection(airport, info);
                     container.appendChild(section);
                 }
 
-                // Update summary text
-                section.querySelector('.flight-summary').textContent =
-                    `${info.count} evacuation flight(s) to non-GCC destinations`;
+                section.querySelector('.airport-flight-count').textContent = `${info.count} flights`;
 
-                // Replace only tbody (filter inputs in thead stay intact)
                 const table = section.querySelector('table');
                 const oldTbody = table.querySelector('tbody');
                 table.replaceChild(buildTbody(pageFlights, airport), oldTbody);
 
-                // Replace pagination
                 const oldPager = section.querySelector('.pagination');
                 if (oldPager) oldPager.remove();
                 const newPager = buildPagination(airport, page, totalPages, totalFlights);
                 if (newPager) section.appendChild(newPager);
             }
 
-            // Remove sections for airports no longer in the data
             container.querySelectorAll('[data-airport]').forEach(el => {
                 if (!airportsInData.has(el.dataset.airport)) el.remove();
             });
 
-            // Show empty message if no sections
             const emptyMsg = container.querySelector('.no-flights');
             if (container.querySelectorAll('[data-airport]').length === 0) {
                 if (!emptyMsg) {
-                    const p = document.createElement('p');
+                    const p = document.createElement('div');
                     p.className = 'no-flights';
-                    p.textContent = 'No evacuation flights found matching your filters. Try adjusting the status filters or selecting a different airport.';
+                    p.innerHTML = '<p>No evacuation flights found matching your filters.</p><p class="no-flights-hint">Try adjusting the status filters or selecting a different airport.</p>';
                     container.appendChild(p);
                 }
             } else if (emptyMsg) {
@@ -1029,13 +911,7 @@
             }
         }
 
-        // Re-filter when checkboxes or availability filter change
-        document.querySelectorAll('.filters input[type="checkbox"]').forEach(cb => {
-            cb.addEventListener('change', () => {
-                for (const k in currentPage) currentPage[k] = 1;
-                applyFiltersAndRender();
-            });
-        });
+        // Re-filter when availability filter changes
         document.getElementById('filter-availability').addEventListener('change', () => {
             for (const k in currentPage) currentPage[k] = 1;
             applyFiltersAndRender();
@@ -1053,9 +929,7 @@
                         startAvailabilityRefresh();
                     }
                 }
-            } catch (e) {
-                // Availability not available — non-critical
-            }
+            } catch (e) { }
         }
 
         function startAvailabilityRefresh() {
@@ -1067,7 +941,6 @@
 
         async function refreshAvailability() {
             if (!availabilityEnabled || !lastData || availabilityChecking) return;
-            // Clear cache to get fresh data
             for (const key of Object.keys(availabilityCache)) {
                 delete availabilityCache[key];
             }
@@ -1082,7 +955,6 @@
             const statusEl = document.getElementById('avail-status-text');
             statusEl.textContent = 'Checking seat availability...';
 
-            // Collect unique routes
             const routes = [];
             const seen = new Set();
             for (const [airport, info] of Object.entries(lastData)) {
@@ -1093,7 +965,6 @@
                     if (!seen.has(key)) {
                         seen.add(key);
                         routes.push({ origin: airport, dest: f.destination_iata, date: depDate });
-                        // Mark as checking
                         availabilityCache[key] = { available: null, cheapest: null, checking: true };
                     }
                 }
@@ -1105,7 +976,6 @@
                 return;
             }
 
-            // Batch in chunks of 30 (API limit)
             const chunks = [];
             for (let i = 0; i < routes.length; i += 30) {
                 chunks.push(routes.slice(i, i + 30));
@@ -1125,7 +995,6 @@
                             availabilityCache[key] = { ...result, checking: false };
                         }
                     } else {
-                        // Mark chunk routes as unknown
                         for (const r of chunk) {
                             const key = `${r.origin}-${r.dest}-${r.date}`;
                             availabilityCache[key] = { available: null, cheapest: null, checking: false };
@@ -1139,22 +1008,20 @@
                     }
                 }
                 completed += chunk.length;
-                statusEl.textContent = `Checking availability... ${completed}/${routes.length} routes`;
-                // Re-render to show progressive results
+                statusEl.textContent = `Checking availability... ${completed}/${routes.length}`;
                 applyFiltersAndRender();
             }
 
             const availCount = Object.values(availabilityCache)
                 .filter(a => a.available === true).length;
-            statusEl.textContent = `${availCount} route(s) with seats available`;
+            statusEl.textContent = availCount > 0 ? `${availCount} route(s) with seats` : '';
             availabilityChecking = false;
             applyFiltersAndRender();
         }
 
-        // Check availability status on load, then auto-check when flights are loaded
         checkAvailabilityStatus();
 
-        // ---- AviationStack flight verification (cancellation detection) ----
+        // ---- AviationStack flight verification ----
 
         async function checkVerificationStatus() {
             try {
@@ -1166,9 +1033,7 @@
                         startVerificationRefresh();
                     }
                 }
-            } catch (e) {
-                // Verification not available — non-critical
-            }
+            } catch (e) { }
         }
 
         function startVerificationRefresh() {
@@ -1182,7 +1047,6 @@
             if (!verificationEnabled || !lastData || verificationChecking) return;
             verificationChecking = true;
 
-            // Collect unique flight numbers from loaded data
             const flightNumbers = new Set();
             for (const info of Object.values(lastData)) {
                 for (const f of info.flights) {
@@ -1197,7 +1061,6 @@
                 return;
             }
 
-            // Batch in chunks of 10 (AviationStack free tier limit)
             const allFns = [...flightNumbers];
             for (let i = 0; i < allFns.length; i += 10) {
                 const chunk = allFns.slice(i, i + 10);
@@ -1219,26 +1082,26 @@
             }
 
             verificationChecking = false;
-            // Re-render to show cancelled flight warnings
             applyFiltersAndRender();
         }
 
         checkVerificationStatus();
 
-        // ---- Connection and reliability monitoring ----
+        // ---- Connection monitoring ----
 
         function setConnectionStatus(online) {
-            const el = document.getElementById('connection-status');
+            const el = document.getElementById('connection-pill');
             const text = document.getElementById('connection-text');
             if (online) {
-                el.classList.add('hidden');
+                el.classList.remove('pill-offline');
+                el.classList.add('pill-live');
+                text.textContent = 'Live';
             } else {
-                el.classList.remove('hidden');
-                el.className = 'connection-status offline';
-                text.textContent = 'Connection lost. Showing cached data. Retrying...';
-                // Attempt faster refresh when reconnected
+                el.classList.remove('pill-live', 'hidden');
+                el.classList.add('pill-offline');
+                text.textContent = 'Offline';
                 window.addEventListener('online', () => {
-                    el.classList.add('hidden');
+                    setConnectionStatus(true);
                     triggerRefresh();
                 }, { once: true });
             }
@@ -1247,7 +1110,6 @@
         window.addEventListener('offline', () => setConnectionStatus(false));
         window.addEventListener('online', () => setConnectionStatus(true));
 
-        // Warn before leaving if data is loaded (prevent accidental navigation)
         window.addEventListener('beforeunload', (e) => {
             if (lastData && Object.keys(lastData).length > 0) {
                 e.preventDefault();
