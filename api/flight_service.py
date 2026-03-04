@@ -213,31 +213,34 @@ class FlightService:
     ) -> EvacFlight | None:
         """Process a single flight record and return EvacFlight if viable."""
         try:
-            flight_info = flight_data.get("flight", {})
+            # FR24 sometimes returns None for nested dicts, so use `or {}`
+            # to guard every chained .get() — `.get("k", {})` does NOT help
+            # when the key exists but its value is explicitly None.
+            flight_info = flight_data.get("flight") or {}
 
             # Extract status
-            status_data = flight_info.get("status", {})
-            status_text = status_data.get("text", "").lower().strip()
+            status_data = flight_info.get("status") or {}
+            status_text = (status_data.get("text") or "").lower().strip()
             if not status_text:
-                status_text = status_data.get("generic", {}).get("status", {}).get("text", "").lower().strip()
+                generic = (status_data.get("generic") or {}).get("status") or {}
+                status_text = (generic.get("text") or "").lower().strip()
 
             # Filter: only viable statuses
             if status_text in EXCLUDED_STATUSES:
                 return None
 
             # Extract destination
-            dest_info = flight_info.get("airport", {}).get("destination", {})
+            airport_data = flight_info.get("airport") or {}
+            dest_info = airport_data.get("destination") or {}
             if not dest_info:
                 return None
 
-            dest_iata = dest_info.get("code", {}).get("iata", "")
-            dest_icao = dest_info.get("code", {}).get("icao", "")
-            dest_name = dest_info.get("name", "Unknown")
-            dest_country = (
-                dest_info.get("position", {})
-                .get("country", {})
-                .get("code", "")
-            )
+            dest_code = dest_info.get("code") or {}
+            dest_iata = dest_code.get("iata") or ""
+            dest_icao = dest_code.get("icao") or ""
+            dest_name = dest_info.get("name") or "Unknown"
+            dest_position = dest_info.get("position") or {}
+            dest_country = (dest_position.get("country") or {}).get("code") or ""
 
             # Filter: destination must be outside GCC
             if dest_iata and dest_iata.upper() in GCC_IATA_CODES:
@@ -246,22 +249,24 @@ class FlightService:
                 return None
 
             # Extract flight number
-            identification = flight_info.get("identification", {})
-            callsign = identification.get("number", {}).get("default", "")
+            identification = flight_info.get("identification") or {}
+            number_info = identification.get("number") or {}
+            callsign = number_info.get("default") or ""
             if not callsign:
-                callsign = identification.get("callsign", "N/A")
+                callsign = identification.get("callsign") or "N/A"
 
             # Extract airline
-            airline_info = flight_info.get("airline", {})
-            airline_icao = airline_info.get("code", {}).get("icao", "")
-            airline_name = airline_info.get("name", "")
+            airline_info = flight_info.get("airline") or {}
+            airline_code = airline_info.get("code") or {}
+            airline_icao = airline_code.get("icao") or ""
+            airline_name = airline_info.get("name") or ""
             if not airline_name and airline_icao:
                 airline_name = airlines_map.get(airline_icao, "Unknown Airline")
 
             # Extract departure time
-            time_info = flight_info.get("time", {})
-            dep_scheduled = time_info.get("scheduled", {}).get("departure", 0)
-            dep_estimated = time_info.get("estimated", {}).get("departure", 0)
+            time_info = flight_info.get("time") or {}
+            dep_scheduled = ((time_info.get("scheduled") or {}).get("departure")) or 0
+            dep_estimated = ((time_info.get("estimated") or {}).get("departure")) or 0
             dep_time = dep_estimated or dep_scheduled
             if dep_time:
                 dep_dt = datetime.fromtimestamp(dep_time, tz=timezone.utc)
