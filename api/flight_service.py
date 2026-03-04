@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from FlightRadar24 import FlightRadar24API
 
-from .gcc_data import (
+from gcc_data import (
     GCC_AIRPORTS,
     GCC_ICAO_CODES,
     GCC_IATA_CODES,

@@ -1,12 +1,15 @@
 """
 Vercel serverless Flask handler for the Evacuation Flight Tracker API.
+
+Vercel runs each file in api/ as a standalone serverless function,
+so we use absolute imports (Vercel adds api/ to sys.path).
 """
 
 import logging
 from flask import Flask, jsonify, request
 
-from .gcc_data import GCC_AIRPORTS, PRIMARY_DEPARTURE_AIRPORTS
-from .flight_service import FlightService
+from gcc_data import GCC_AIRPORTS, PRIMARY_DEPARTURE_AIRPORTS
+from flight_service import FlightService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
