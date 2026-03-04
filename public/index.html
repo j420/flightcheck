@@ -299,7 +299,11 @@
             btn.textContent = 'Scanning...';
             lastData = {};
             lastFiltered = null;
-            document.getElementById('flights-container').innerHTML = '';
+            // Clear all existing airport sections for a fresh scan
+            const fc = document.getElementById('flights-container');
+            fc.querySelectorAll('[data-airport]').forEach(el => el.remove());
+            const em = fc.querySelector('.no-flights');
+            if (em) em.remove();
 
             let completed = 0, failed = 0;
             const total = MAJOR_AIRPORTS.length;
@@ -357,12 +361,121 @@
             renderFlights(filtered);
         }
 
+        function buildBookingUrl(flight, originIata) {
+            // Build a Google Flights URL with specific flight details
+            const depDate = flight.scheduled_departure.split(' ')[0] || '';
+            const datePart = depDate ? `&d1=${encodeURIComponent(depDate)}` : '';
+            return `https://www.google.com/travel/flights?q=${encodeURIComponent(
+                flight.flight_number + ' ' + originIata + ' to ' + flight.destination_iata
+            )}${datePart}`;
+        }
+
+        function buildTbody(pageFlights, airport) {
+            const tbody = document.createElement('tbody');
+            for (const flight of pageFlights) {
+                const statusClass = getStatusClass(flight.status);
+                const bookUrl = buildBookingUrl(flight, airport);
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="flight-number">${esc(flight.flight_number)}</td>
+                    <td>${esc(flight.airline_name)}</td>
+                    <td><strong>${esc(flight.destination_iata)}</strong><br><span class="dest-name">${esc(flight.destination_name)}</span></td>
+                    <td>${esc(flight.scheduled_departure)}</td>
+                    <td><span class="status-badge ${statusClass}">${esc(flight.status)}</span></td>
+                    <td>${esc(flight.aircraft_type || '-')}</td>
+                    <td><a href="${esc(bookUrl)}" target="_blank" rel="noopener" class="btn-book">Book Now</a></td>
+                `;
+                tbody.appendChild(row);
+            }
+            return tbody;
+        }
+
+        function buildPagination(airport, page, totalPages, totalFlights) {
+            if (totalPages <= 1) return null;
+            const pager = document.createElement('div');
+            pager.className = 'pagination';
+
+            const prevBtn = document.createElement('button');
+            prevBtn.textContent = 'Previous';
+            prevBtn.className = 'btn-page';
+            prevBtn.disabled = page <= 1;
+            prevBtn.addEventListener('click', () => { currentPage[airport]--; renderFlights(lastFiltered); });
+
+            const pageInfo = document.createElement('span');
+            pageInfo.className = 'page-info';
+            pageInfo.textContent = `Page ${page} of ${totalPages} (${totalFlights} flights)`;
+
+            const nextBtn = document.createElement('button');
+            nextBtn.textContent = 'Next';
+            nextBtn.className = 'btn-page';
+            nextBtn.disabled = page >= totalPages;
+            nextBtn.addEventListener('click', () => { currentPage[airport]++; renderFlights(lastFiltered); });
+
+            pager.appendChild(prevBtn);
+            pager.appendChild(pageInfo);
+            pager.appendChild(nextBtn);
+            return pager;
+        }
+
+        function createAirportSection(airport, info) {
+            const section = document.createElement('div');
+            section.className = 'airport-section';
+            section.dataset.airport = airport;
+
+            const header = document.createElement('h2');
+            header.textContent = `${info.city} (${airport}) - ${info.airport_name}`;
+            section.appendChild(header);
+
+            const summary = document.createElement('p');
+            summary.className = 'flight-summary';
+            section.appendChild(summary);
+
+            // Table with stable filter row
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+
+            const headerRow = document.createElement('tr');
+            ['Flight','Airline','Destination','Departure','Status','Aircraft','Action'].forEach(h => {
+                const th = document.createElement('th');
+                th.textContent = h;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+
+            const filterRow = document.createElement('tr');
+            filterRow.className = 'filter-row';
+            ['flight','airline','destination','departure','status','aircraft'].forEach(col => {
+                const th = document.createElement('th');
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.placeholder = 'Filter...';
+                input.className = 'col-filter';
+                input.dataset.col = col;
+                input.value = columnFilters[col];
+                input.addEventListener('input', (e) => {
+                    onColumnFilter(e.target.dataset.col, e.target.value);
+                });
+                th.appendChild(input);
+                filterRow.appendChild(th);
+            });
+            filterRow.appendChild(document.createElement('th'));
+            thead.appendChild(filterRow);
+            table.appendChild(thead);
+
+            // Empty tbody placeholder
+            table.appendChild(document.createElement('tbody'));
+            section.appendChild(table);
+
+            return section;
+        }
+
         function renderFlights(airportData) {
             const container = document.getElementById('flights-container');
-            container.innerHTML = '';
+            const airportsInData = new Set();
 
             for (const [airport, info] of Object.entries(airportData)) {
                 if (!info.flights || info.flights.length === 0) continue;
+                airportsInData.add(airport);
 
                 const totalFlights = info.flights.length;
                 const totalPages = Math.ceil(totalFlights / ROWS_PER_PAGE);
@@ -371,106 +484,45 @@
                 const startIdx = (page - 1) * ROWS_PER_PAGE;
                 const pageFlights = info.flights.slice(startIdx, startIdx + ROWS_PER_PAGE);
 
-                const section = document.createElement('div');
-                section.className = 'airport-section';
-                section.dataset.airport = airport;
-
-                // Header
-                const header = document.createElement('h2');
-                header.textContent = `${info.city} (${airport}) - ${info.airport_name}`;
-                section.appendChild(header);
-
-                const summary = document.createElement('p');
-                summary.className = 'flight-summary';
-                summary.textContent = `${info.count} evacuation flight(s) to non-GCC destinations`;
-                section.appendChild(summary);
-
-                // Table with filter row
-                const table = document.createElement('table');
-                const thead = document.createElement('thead');
-
-                // Header row
-                const headerRow = document.createElement('tr');
-                ['Flight','Airline','Destination','Departure','Status','Aircraft','Action'].forEach(h => {
-                    const th = document.createElement('th');
-                    th.textContent = h;
-                    headerRow.appendChild(th);
-                });
-                thead.appendChild(headerRow);
-
-                // Filter row
-                const filterRow = document.createElement('tr');
-                filterRow.className = 'filter-row';
-                ['flight','airline','destination','departure','status','aircraft'].forEach(col => {
-                    const th = document.createElement('th');
-                    const input = document.createElement('input');
-                    input.type = 'text';
-                    input.placeholder = 'Filter...';
-                    input.className = 'col-filter';
-                    input.dataset.col = col;
-                    input.value = columnFilters[col];
-                    input.addEventListener('input', (e) => {
-                        onColumnFilter(e.target.dataset.col, e.target.value);
-                    });
-                    th.appendChild(input);
-                    filterRow.appendChild(th);
-                });
-                const emptyTh = document.createElement('th');
-                filterRow.appendChild(emptyTh);
-                thead.appendChild(filterRow);
-                table.appendChild(thead);
-
-                // Body rows (paginated)
-                const tbody = document.createElement('tbody');
-                for (const flight of pageFlights) {
-                    const statusClass = getStatusClass(flight.status);
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td class="flight-number">${esc(flight.flight_number)}</td>
-                        <td>${esc(flight.airline_name)}</td>
-                        <td><strong>${esc(flight.destination_iata)}</strong><br><span class="dest-name">${esc(flight.destination_name)}</span></td>
-                        <td>${esc(flight.scheduled_departure)}</td>
-                        <td><span class="status-badge ${statusClass}">${esc(flight.status)}</span></td>
-                        <td>${esc(flight.aircraft_type || '-')}</td>
-                        <td><a href="${esc(flight.booking_url)}" target="_blank" rel="noopener" class="btn-book">Book Now</a></td>
-                    `;
-                    tbody.appendChild(row);
-                }
-                table.appendChild(tbody);
-                section.appendChild(table);
-
-                // Pagination controls
-                if (totalPages > 1) {
-                    const pager = document.createElement('div');
-                    pager.className = 'pagination';
-
-                    const prevBtn = document.createElement('button');
-                    prevBtn.textContent = 'Previous';
-                    prevBtn.className = 'btn-page';
-                    prevBtn.disabled = page <= 1;
-                    prevBtn.addEventListener('click', () => { currentPage[airport]--; renderFlights(lastFiltered); });
-
-                    const pageInfo = document.createElement('span');
-                    pageInfo.className = 'page-info';
-                    pageInfo.textContent = `Page ${page} of ${totalPages} (${totalFlights} flights)`;
-
-                    const nextBtn = document.createElement('button');
-                    nextBtn.textContent = 'Next';
-                    nextBtn.className = 'btn-page';
-                    nextBtn.disabled = page >= totalPages;
-                    nextBtn.addEventListener('click', () => { currentPage[airport]++; renderFlights(lastFiltered); });
-
-                    pager.appendChild(prevBtn);
-                    pager.appendChild(pageInfo);
-                    pager.appendChild(nextBtn);
-                    section.appendChild(pager);
+                // Find or create the section
+                let section = container.querySelector(`[data-airport="${airport}"]`);
+                if (!section) {
+                    section = createAirportSection(airport, info);
+                    container.appendChild(section);
                 }
 
-                container.appendChild(section);
+                // Update summary text
+                section.querySelector('.flight-summary').textContent =
+                    `${info.count} evacuation flight(s) to non-GCC destinations`;
+
+                // Replace only tbody (filter inputs in thead stay intact)
+                const table = section.querySelector('table');
+                const oldTbody = table.querySelector('tbody');
+                table.replaceChild(buildTbody(pageFlights, airport), oldTbody);
+
+                // Replace pagination
+                const oldPager = section.querySelector('.pagination');
+                if (oldPager) oldPager.remove();
+                const newPager = buildPagination(airport, page, totalPages, totalFlights);
+                if (newPager) section.appendChild(newPager);
             }
 
-            if (container.children.length === 0) {
-                container.innerHTML = '<p class="no-flights">No evacuation flights found matching your filters. Try adjusting the status filters or selecting a different airport.</p>';
+            // Remove sections for airports no longer in the data
+            container.querySelectorAll('[data-airport]').forEach(el => {
+                if (!airportsInData.has(el.dataset.airport)) el.remove();
+            });
+
+            // Show empty message if no sections
+            const emptyMsg = container.querySelector('.no-flights');
+            if (container.querySelectorAll('[data-airport]').length === 0) {
+                if (!emptyMsg) {
+                    const p = document.createElement('p');
+                    p.className = 'no-flights';
+                    p.textContent = 'No evacuation flights found matching your filters. Try adjusting the status filters or selecting a different airport.';
+                    container.appendChild(p);
+                }
+            } else if (emptyMsg) {
+                emptyMsg.remove();
             }
         }
 
