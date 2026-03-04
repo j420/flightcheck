@@ -168,6 +168,20 @@ button:disabled {
     display: none;
 }
 
+.status-left {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.status-right {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
 #status-text {
     font-weight: 600;
 }
@@ -175,6 +189,27 @@ button:disabled {
 #flight-count {
     color: var(--accent);
     font-weight: 600;
+}
+
+#auto-refresh-info {
+    color: var(--success);
+    font-weight: 600;
+}
+
+/* Error banner */
+.error-banner {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+    padding: 0.75rem 1.25rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.error-banner.hidden {
+    display: none;
 }
 
 /* Results */

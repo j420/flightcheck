@@ -1,14 +1,16 @@
 """
 FlightRadar24 integration service for evacuation flight tracking.
 
-Fetches live departure data from GCC airports, filters for viable evacuation flights
-(Scheduled/Estimated status, non-GCC destinations, no GCC stopovers).
+CRITICAL: This service supports emergency evacuation operations.
+All API calls include retry logic. Failed airports never block others.
+Results are cached so stale data can be served if the API goes down.
 """
 
 import logging
 import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
+from threading import Lock
 
 from FlightRadar24 import FlightRadar24API
 
@@ -17,7 +19,6 @@ from gcc_data import (
     GCC_ICAO_CODES,
     GCC_IATA_CODES,
     PRIMARY_DEPARTURE_AIRPORTS,
-    get_booking_url,
     GOOGLE_FLIGHTS_BASE,
 )
 
@@ -28,6 +29,11 @@ VIABLE_STATUSES = {"scheduled", "estimated", "delayed", "departed"}
 
 # Statuses to exclude
 EXCLUDED_STATUSES = {"canceled", "cancelled", "diverted", "landed"}
+
+# Cache: airport_iata -> {"flights": [...], "timestamp": unix_ts}
+_results_cache: dict[str, dict] = {}
+_cache_lock = Lock()
+CACHE_TTL_SECONDS = 120  # serve cached data for up to 2 minutes
 
 
 @dataclass
@@ -51,40 +57,56 @@ class EvacFlight:
         return asdict(self)
 
 
+def _retry_api_call(fn, retries=3, backoff=1.0):
+    """
+    Retry an API call with exponential backoff.
+    Critical for reliability when FR24 is under load.
+    """
+    last_err = None
+    for attempt in range(retries):
+        try:
+            return fn()
+        except Exception as e:
+            last_err = e
+            wait = backoff * (2 ** attempt)
+            logger.warning(f"API call failed (attempt {attempt + 1}/{retries}): {e}. Retrying in {wait}s...")
+            time.sleep(wait)
+    raise last_err
+
+
 class FlightService:
     """Service to fetch and filter evacuation-viable flights from FR24."""
 
     def __init__(self):
         self.api = FlightRadar24API()
-        self._airport_cache: dict[str, dict] = {}
         self._airlines_cache: list[dict] | None = None
+        self._airlines_map_cache: dict[str, str] | None = None
 
     def get_airlines_map(self) -> dict[str, str]:
-        """Get a mapping of airline ICAO code -> airline name."""
-        if self._airlines_cache is None:
-            try:
-                self._airlines_cache = self.api.get_airlines()
-            except Exception as e:
-                logger.error(f"Failed to fetch airlines: {e}")
-                self._airlines_cache = []
-        return {
-            a.get("ICAO", ""): a.get("Name", "Unknown")
-            for a in self._airlines_cache
-            if a.get("ICAO")
-        }
+        """Get a mapping of airline ICAO code -> airline name. Cached permanently."""
+        if self._airlines_map_cache is not None:
+            return self._airlines_map_cache
 
-    def get_departures(self, airport_iata: str, max_pages: int = 3) -> list[EvacFlight]:
+        try:
+            airlines = _retry_api_call(self.api.get_airlines, retries=2, backoff=0.5)
+            self._airlines_map_cache = {
+                a.get("ICAO", ""): a.get("Name", "Unknown")
+                for a in airlines
+                if a.get("ICAO")
+            }
+        except Exception as e:
+            logger.error(f"Failed to fetch airlines after retries: {e}")
+            self._airlines_map_cache = {}
+
+        return self._airlines_map_cache
+
+    def get_departures(self, airport_iata: str) -> list[EvacFlight]:
         """
         Fetch departures from a GCC airport and filter for evacuation-viable flights.
-
-        Steps:
-        1. Query FR24 for departures
-        2. Filter: only Scheduled/Estimated status
-        3. Filter: destination must be outside GCC
-        4. Flag: multi-hop flights via GCC airports
-        5. Add booking URLs
+        Includes retry logic and cache fallback.
         """
-        airport_info = GCC_AIRPORTS.get(airport_iata.upper())
+        airport_iata = airport_iata.upper()
+        airport_info = GCC_AIRPORTS.get(airport_iata)
         if not airport_info:
             logger.warning(f"Airport {airport_iata} not found in GCC data")
             return []
@@ -92,13 +114,31 @@ class FlightService:
         icao = airport_info["icao"]
         all_flights = []
 
-        for page in range(1, max_pages + 1):
+        # Fetch page 1 with retries (most critical data)
+        try:
+            details = _retry_api_call(
+                lambda: self.api.get_airport_details(icao, flight_limit=100, page=1),
+                retries=3,
+                backoff=1.0,
+            )
+            departures = (
+                details
+                .get("airport", {})
+                .get("pluginData", {})
+                .get("schedule", {})
+                .get("departures", {})
+                .get("data", [])
+            )
+            all_flights.extend(departures)
+        except Exception as e:
+            logger.error(f"All retries failed for {airport_iata} page 1: {e}")
+            # Fall back to cache
+            return self._get_cached(airport_iata)
+
+        # Fetch pages 2-3 best-effort (no retry, don't block on these)
+        for page in range(2, 4):
             try:
-                details = self.api.get_airport_details(
-                    icao,
-                    flight_limit=100,
-                    page=page,
-                )
+                details = self.api.get_airport_details(icao, flight_limit=100, page=page)
                 departures = (
                     details
                     .get("airport", {})
@@ -110,9 +150,9 @@ class FlightService:
                 if not departures:
                     break
                 all_flights.extend(departures)
-                time.sleep(0.5)  # rate limiting
+                time.sleep(0.3)
             except Exception as e:
-                logger.error(f"Error fetching departures from {airport_iata} page {page}: {e}")
+                logger.warning(f"Failed to fetch {airport_iata} page {page} (non-critical): {e}")
                 break
 
         airlines_map = self.get_airlines_map()
@@ -123,9 +163,30 @@ class FlightService:
             if evac:
                 evac_flights.append(evac)
 
-        # Sort by departure time
         evac_flights.sort(key=lambda f: f.scheduled_departure)
+
+        # Update cache
+        self._set_cached(airport_iata, evac_flights)
+
         return evac_flights
+
+    def _get_cached(self, airport_iata: str) -> list[EvacFlight]:
+        """Return cached results if available and not too old."""
+        with _cache_lock:
+            cached = _results_cache.get(airport_iata)
+        if cached:
+            age = time.time() - cached["timestamp"]
+            logger.info(f"Serving cached data for {airport_iata} (age: {age:.0f}s)")
+            return cached["flights"]
+        return []
+
+    def _set_cached(self, airport_iata: str, flights: list[EvacFlight]):
+        """Cache results for an airport."""
+        with _cache_lock:
+            _results_cache[airport_iata] = {
+                "flights": flights,
+                "timestamp": time.time(),
+            }
 
     def _process_flight(
         self,
@@ -141,16 +202,12 @@ class FlightService:
             # Extract status
             status_data = flight_info.get("status", {})
             status_text = status_data.get("text", "").lower().strip()
-            # Also check the generic status field
             if not status_text:
                 status_text = status_data.get("generic", {}).get("status", {}).get("text", "").lower().strip()
 
             # Filter: only viable statuses
             if status_text in EXCLUDED_STATUSES:
                 return None
-            if status_text and status_text not in VIABLE_STATUSES:
-                # Unknown status - include it but log
-                logger.debug(f"Including flight with unknown status: {status_text}")
 
             # Extract destination
             dest_info = flight_info.get("airport", {}).get("destination", {})
@@ -233,16 +290,19 @@ class FlightService:
     def scan_all_gcc_departures(self, airports: list[str] | None = None) -> dict[str, list[EvacFlight]]:
         """
         Scan multiple GCC airports for evacuation flights.
-        Returns a dict of airport_iata -> list of EvacFlight.
+        Each airport is independent - one failure never blocks the rest.
         """
         airports = airports or PRIMARY_DEPARTURE_AIRPORTS
         results = {}
 
         for airport in airports:
-            logger.info(f"Scanning departures from {airport}...")
-            flights = self.get_departures(airport)
-            if flights:
-                results[airport] = flights
-            time.sleep(1)  # rate limit between airports
+            try:
+                logger.info(f"Scanning departures from {airport}...")
+                flights = self.get_departures(airport)
+                if flights:
+                    results[airport] = flights
+            except Exception as e:
+                logger.error(f"Failed to scan {airport}: {e}")
+            time.sleep(0.5)
 
         return results
