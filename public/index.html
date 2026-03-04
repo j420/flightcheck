@@ -57,9 +57,6 @@
                 <label><input type="checkbox" id="filter-delayed" checked> Delayed</label>
                 <label><input type="checkbox" id="filter-unknown" checked> Unknown Status</label>
                 <span class="filter-divider"></span>
-                <label class="avail-filter-label" id="avail-filter-wrap" style="display:none">
-                    <input type="checkbox" id="filter-available-only"> Seats Available Only
-                </label>
                 <span id="avail-status-text" class="avail-status"></span>
             </div>
         </section>
@@ -117,6 +114,8 @@
         const availabilityCache = {};
         let availabilityEnabled = false; // whether Amadeus is configured
         let availabilityChecking = false;
+        let availRefreshTimer = null;
+        const AVAIL_REFRESH_MS = 120000; // refresh availability every 2 minutes
 
         // ---- Fetch with timeout and retry ----
 
@@ -355,11 +354,15 @@
 
         // ---- Rendering ----
 
+        function hasAvailabilityData() {
+            return Object.values(availabilityCache).some(a => !a.checking && a.available !== null);
+        }
+
         function applyFiltersAndRender() {
             if (!lastData) return;
 
-            const showAvailOnly = availabilityEnabled
-                && document.getElementById('filter-available-only').checked;
+            // Auto-filter to available-only once we have availability data
+            const showAvailOnly = availabilityEnabled && hasAvailabilityData();
 
             const filtered = {};
             let totalCount = 0;
@@ -423,42 +426,59 @@
             return `https://www.google.com/travel/flights/search?tfs=${b64}&hl=en`;
         }
 
-        // Known airline ICAO → direct booking URL mapping
-        const AIRLINE_URLS = {
-            UAE: 'https://www.emirates.com/flights/book',
-            ETD: 'https://www.etihad.com/en/book',
-            QTR: 'https://www.qatarairways.com/en/booking.html',
-            SVA: 'https://www.saudia.com/booking',
-            GFA: 'https://www.gulfair.com/book',
-            KAC: 'https://www.kuwaitairways.com/en/booking',
-            OMA: 'https://www.omanair.com/en/book',
-            FDB: 'https://www.flydubai.com/en/booking',
-            ABY: 'https://www.airarabia.com/en/booking',
-            WIZ: 'https://wizzair.com/en-gb/booking',
-            THY: 'https://www.turkishairlines.com/en-int/flights/booking',
-            BAW: 'https://www.britishairways.com/travel/book',
-            DLH: 'https://www.lufthansa.com/xx/en/book-a-flight',
-            AFR: 'https://www.airfrance.com/booking',
-            KLM: 'https://www.klm.com/booking',
-            SIA: 'https://www.singaporeair.com/en_UK/plan-and-book',
-            CPA: 'https://www.cathaypacific.com/cx/en_HK/book-a-trip',
-            DAL: 'https://www.delta.com/flight-search',
-            AAL: 'https://www.aa.com/booking',
-            UAL: 'https://www.united.com/en/us/book-flight',
-            AIC: 'https://www.airindia.com/en/book.html',
-            IGO: 'https://www.goindigo.in/booking',
-            PAL: 'https://www.philippineairlines.com/en/booking',
-            MAS: 'https://www.malaysiaairlines.com/booking',
+        // Known airline ICAO → deep-link builder with pre-filled flight details
+        // Each entry is either a function(origin, dest, date) returning a URL,
+        // or a string for airlines without known deep-link parameters.
+        const AIRLINE_DEEPLINKS = {
+            UAE: (o, d, date) => {
+                // Emirates: date as DDMMYYYY
+                const [y, m, dd] = date.split('-');
+                return `https://www.emirates.com/flights/search?from=${o}&to=${d}&departDate=${dd}${m}${y}&adult=1&class=economy`;
+            },
+            ETD: (o, d, date) => `https://www.etihad.com/en/fly/book?from=${o}&to=${d}&departure=${date}&adults=1`,
+            QTR: (o, d, date) => `https://www.qatarairways.com/en/booking.html?widget=QR&searchType=F&addTax498to498498498=0&bookingClass=E&tripType=O&from=${o}&to=${d}&departing=${date}&adults=1&children=0&infants=0&teenager=0`,
+            SVA: (o, d, date) => `https://www.saudia.com/booking?origin=${o}&destination=${d}&departureDate=${date}&adults=1`,
+            GFA: (o, d, date) => `https://booking.gulfair.com/dx/GFDX/#/flight-selection?ADT=1&CHD=0&INF=0&tripType=OW&departure=${o}&arrival=${d}&outbound=${date}`,
+            KAC: (o, d, date) => `https://www.kuwaitairways.com/en/booking?from=${o}&to=${d}&departure=${date}&pax=1`,
+            OMA: (o, d, date) => `https://www.omanair.com/en/book?origin=${o}&destination=${d}&departureDate=${date}&adults=1`,
+            FDB: (o, d, date) => `https://www.flydubai.com/en/booking?from=${o}&to=${d}&departure=${date}&adult=1`,
+            ABY: (o, d, date) => `https://www.airarabia.com/en/booking?from=${o}&to=${d}&date=${date}&adults=1`,
+            THY: (o, d, date) => `https://www.turkishairlines.com/en-int/flights/booking?origin=${o}&destination=${d}&departureDate=${date}&adult=1`,
+            BAW: (o, d, date) => {
+                // BA: date as YYYYMMDD
+                const compact = date.replace(/-/g, '');
+                return `https://www.britishairways.com/travel/book/public/en_gb?from=${o}&to=${d}&depDate=${compact}&cabin=M&ad=1&yf=0`;
+            },
+            DLH: (o, d, date) => `https://www.lufthansa.com/xx/en/flight-search?origin=${o}&destination=${d}&outbound-date=${date}&adults=1&class=economy`,
+            AFR: (o, d, date) => `https://www.airfrance.com/search/offer?pax=1:0:0:0:0:0:0:0&cabinClass=ECONOMY&activeConnection=0&connections=${o}>${d}-${date}`,
+            KLM: (o, d, date) => `https://www.klm.com/search/offer?pax=1:0:0:0:0:0:0:0&cabinClass=ECONOMY&activeConnection=0&connections=${o}>${d}-${date}`,
+            SIA: (o, d, date) => `https://www.singaporeair.com/en_UK/plan-and-book/book-a-flight?from=${o}&to=${d}&departDate=${date}&cabinClass=Y&adults=1`,
+            CPA: (o, d, date) => `https://www.cathaypacific.com/cx/en_HK/book-a-trip/book-a-flight.html?from=${o}&to=${d}&departure=${date}&adults=1`,
+            DAL: (o, d, date) => `https://www.delta.com/flight-search/search?fromCity=${o}&toCity=${d}&departureDate=${date}&paxCount=1`,
+            AAL: (o, d, date) => `https://www.aa.com/booking/find-flights?from=${o}&to=${d}&date=${date}&adult=1`,
+            UAL: (o, d, date) => `https://www.united.com/en/us/fsr/choose-flights?f=${o}&t=${d}&d=${date}&tt=1&sc=7&px=1&taxng=1&newHP=True&clm=7&st=bestmatches`,
+            AIC: (o, d, date) => `https://www.airindia.com/en/book.html?from=${o}&to=${d}&departDate=${date}&adults=1`,
+            IGO: (o, d, date) => `https://www.goindigo.in/booking?from=${o}&to=${d}&date=${date}&adults=1`,
+            PAL: (o, d, date) => `https://www.philippineairlines.com/en/booking?from=${o}&to=${d}&date=${date}&adults=1`,
+            MAS: (o, d, date) => `https://www.malaysiaairlines.com/booking?from=${o}&to=${d}&date=${date}&adults=1`,
             PIA: 'https://www.piac.com.pk/booking',
-            EGF: 'https://www.egyptair.com/en/fly/book-a-flight',
-            RJA: 'https://www.rj.com/en/book',
+            EGF: (o, d, date) => `https://www.egyptair.com/en/fly/book-a-flight?from=${o}&to=${d}&date=${date}&adults=1`,
+            RJA: (o, d, date) => `https://www.rj.com/en/book?from=${o}&to=${d}&date=${date}&adults=1`,
             MEA: 'https://www.mea.com.lb/english/book',
-            ETH: 'https://www.ethiopianairlines.com/book',
+            ETH: (o, d, date) => `https://www.ethiopianairlines.com/book?from=${o}&to=${d}&date=${date}&adults=1`,
             KQA: 'https://www.kenya-airways.com/booking',
-            SWR: 'https://www.swiss.com/ch/en/book',
-            AUA: 'https://www.austrian.com/at/en/book',
-            TAP: 'https://www.flytap.com/en/booking',
+            SWR: (o, d, date) => `https://www.swiss.com/ch/en/book/offers/flights?from=${o}&to=${d}&date=${date}&adults=1&class=economy`,
+            AUA: (o, d, date) => `https://www.austrian.com/at/en/book?origin=${o}&destination=${d}&outbound=${date}&adults=1`,
+            TAP: (o, d, date) => `https://www.flytap.com/en/booking?from=${o}&to=${d}&date=${date}&adults=1`,
+            WIZ: 'https://wizzair.com/en-gb/booking',
         };
+
+        function buildAirlineBookingUrl(airlineIcao, origin, dest, date) {
+            const entry = AIRLINE_DEEPLINKS[(airlineIcao || '').toUpperCase()];
+            if (!entry) return '';
+            if (typeof entry === 'function') return entry(origin, dest, date);
+            return entry; // fallback: generic URL without pre-fill
+        }
 
         function getAvailabilityHtml(airport, flight) {
             const depDate = flight.scheduled_departure.split(' ')[0] || '';
@@ -483,7 +503,7 @@
                 const statusClass = getStatusClass(flight.status);
                 const depDate = flight.scheduled_departure.split(' ')[0] || '';
                 const gfUrl = buildGoogleFlightsUrl(airport, flight.destination_iata, depDate);
-                const airlineUrl = AIRLINE_URLS[(flight.airline_icao || '').toUpperCase()] || '';
+                const airlineUrl = buildAirlineBookingUrl(flight.airline_icao, airport, flight.destination_iata, depDate);
                 const availCol = availabilityEnabled
                     ? `<td class="avail-cell">${getAvailabilityHtml(airport, flight)}</td>` : '';
                 const row = document.createElement('tr');
@@ -496,8 +516,8 @@
                     <td>${esc(flight.aircraft_type || '-')}</td>
                     ${availCol}
                     <td class="action-cell">
-                        <a href="${esc(gfUrl)}" target="_blank" rel="noopener" class="btn-book">Search Flights</a>
-                        ${airlineUrl ? `<a href="${esc(airlineUrl)}" target="_blank" rel="noopener" class="btn-airline">Airline Site</a>` : ''}
+                        ${airlineUrl ? `<a href="${esc(airlineUrl)}" target="_blank" rel="noopener" class="btn-book">Book Now</a>` : ''}
+                        <a href="${esc(gfUrl)}" target="_blank" rel="noopener" class="btn-airline">Google Flights</a>
                     </td>
                 `;
                 tbody.appendChild(row);
@@ -668,11 +688,6 @@
             });
         });
 
-        document.getElementById('filter-available-only').addEventListener('change', () => {
-            for (const k in currentPage) currentPage[k] = 1;
-            applyFiltersAndRender();
-        });
-
         // ---- Seat availability checking ----
 
         async function checkAvailabilityStatus() {
@@ -682,12 +697,28 @@
                     const data = await resp.json();
                     availabilityEnabled = data.configured;
                     if (availabilityEnabled) {
-                        document.getElementById('avail-filter-wrap').style.display = '';
+                        startAvailabilityRefresh();
                     }
                 }
             } catch (e) {
                 // Availability not available — non-critical
             }
+        }
+
+        function startAvailabilityRefresh() {
+            if (availRefreshTimer) clearInterval(availRefreshTimer);
+            availRefreshTimer = setInterval(() => {
+                refreshAvailability();
+            }, AVAIL_REFRESH_MS);
+        }
+
+        async function refreshAvailability() {
+            if (!availabilityEnabled || !lastData || availabilityChecking) return;
+            // Clear cache to get fresh data
+            for (const key of Object.keys(availabilityCache)) {
+                delete availabilityCache[key];
+            }
+            await checkAvailabilityForLoadedFlights();
         }
 
         async function checkAvailabilityForLoadedFlights() {
