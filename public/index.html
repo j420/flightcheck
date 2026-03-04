@@ -71,6 +71,10 @@
         </section>
 
         <div id="error-banner" class="error-banner hidden"></div>
+        <div id="connection-status" class="connection-status hidden">
+            <span class="connection-dot"></span>
+            <span id="connection-text"></span>
+        </div>
 
         <section id="results" class="results">
             <div id="flights-container"></div>
@@ -361,20 +365,84 @@
             renderFlights(filtered);
         }
 
-        function buildBookingUrl(flight, originIata) {
-            // Build a Google Flights URL with specific flight details
-            const depDate = flight.scheduled_departure.split(' ')[0] || '';
-            const datePart = depDate ? `&d1=${encodeURIComponent(depDate)}` : '';
-            return `https://www.google.com/travel/flights?q=${encodeURIComponent(
-                flight.flight_number + ' ' + originIata + ' to ' + flight.destination_iata
-            )}${datePart}`;
+        // ---- Google Flights protobuf URL builder ----
+        // Builds the tfs= parameter that Google Flights uses to pre-fill
+        // origin, destination, and date in its search form.
+
+        function _pbVarint(val) {
+            const b = [];
+            do { b.push((val & 0x7f) | (val > 0x7f ? 0x80 : 0)); val >>>= 7; } while (val > 0);
+            return b;
         }
+        function _pbTag(field, wire) { return _pbVarint((field << 3) | wire); }
+        function _pbStr(field, str) {
+            const enc = new TextEncoder().encode(str);
+            return [..._pbTag(field, 2), ..._pbVarint(enc.length), ...enc];
+        }
+        function _pbMsg(field, data) {
+            return [..._pbTag(field, 2), ..._pbVarint(data.length), ...data];
+        }
+        function _pbInt(field, val) {
+            return [..._pbTag(field, 0), ..._pbVarint(val)];
+        }
+
+        function buildGoogleFlightsUrl(originIata, destIata, dateStr) {
+            // Airport proto: { 1: int type=1 (IATA), 2: string code }
+            const orig = [..._pbInt(1, 1), ..._pbStr(2, originIata)];
+            const dest = [..._pbInt(1, 1), ..._pbStr(2, destIata)];
+            // Slice proto: { 2: string date, 13: msg origin, 14: msg dest }
+            const slice = [..._pbStr(2, dateStr), ..._pbMsg(13, orig), ..._pbMsg(14, dest)];
+            // Root proto: { 3: msg slice }
+            const root = _pbMsg(3, slice);
+            const b64 = btoa(String.fromCharCode(...root))
+                .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+            return `https://www.google.com/travel/flights/search?tfs=${b64}&hl=en`;
+        }
+
+        // Known airline ICAO → direct booking URL mapping
+        const AIRLINE_URLS = {
+            UAE: 'https://www.emirates.com/flights/book',
+            ETD: 'https://www.etihad.com/en/book',
+            QTR: 'https://www.qatarairways.com/en/booking.html',
+            SVA: 'https://www.saudia.com/booking',
+            GFA: 'https://www.gulfair.com/book',
+            KAC: 'https://www.kuwaitairways.com/en/booking',
+            OMA: 'https://www.omanair.com/en/book',
+            FDB: 'https://www.flydubai.com/en/booking',
+            ABY: 'https://www.airarabia.com/en/booking',
+            WIZ: 'https://wizzair.com/en-gb/booking',
+            THY: 'https://www.turkishairlines.com/en-int/flights/booking',
+            BAW: 'https://www.britishairways.com/travel/book',
+            DLH: 'https://www.lufthansa.com/xx/en/book-a-flight',
+            AFR: 'https://www.airfrance.com/booking',
+            KLM: 'https://www.klm.com/booking',
+            SIA: 'https://www.singaporeair.com/en_UK/plan-and-book',
+            CPA: 'https://www.cathaypacific.com/cx/en_HK/book-a-trip',
+            DAL: 'https://www.delta.com/flight-search',
+            AAL: 'https://www.aa.com/booking',
+            UAL: 'https://www.united.com/en/us/book-flight',
+            AIC: 'https://www.airindia.com/en/book.html',
+            IGO: 'https://www.goindigo.in/booking',
+            PAL: 'https://www.philippineairlines.com/en/booking',
+            MAS: 'https://www.malaysiaairlines.com/booking',
+            PIA: 'https://www.piac.com.pk/booking',
+            EGF: 'https://www.egyptair.com/en/fly/book-a-flight',
+            RJA: 'https://www.rj.com/en/book',
+            MEA: 'https://www.mea.com.lb/english/book',
+            ETH: 'https://www.ethiopianairlines.com/book',
+            KQA: 'https://www.kenya-airways.com/booking',
+            SWR: 'https://www.swiss.com/ch/en/book',
+            AUA: 'https://www.austrian.com/at/en/book',
+            TAP: 'https://www.flytap.com/en/booking',
+        };
 
         function buildTbody(pageFlights, airport) {
             const tbody = document.createElement('tbody');
             for (const flight of pageFlights) {
                 const statusClass = getStatusClass(flight.status);
-                const bookUrl = buildBookingUrl(flight, airport);
+                const depDate = flight.scheduled_departure.split(' ')[0] || '';
+                const gfUrl = buildGoogleFlightsUrl(airport, flight.destination_iata, depDate);
+                const airlineUrl = AIRLINE_URLS[(flight.airline_icao || '').toUpperCase()] || '';
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td class="flight-number">${esc(flight.flight_number)}</td>
@@ -383,7 +451,10 @@
                     <td>${esc(flight.scheduled_departure)}</td>
                     <td><span class="status-badge ${statusClass}">${esc(flight.status)}</span></td>
                     <td>${esc(flight.aircraft_type || '-')}</td>
-                    <td><a href="${esc(bookUrl)}" target="_blank" rel="noopener" class="btn-book">Book Now</a></td>
+                    <td class="action-cell">
+                        <a href="${esc(gfUrl)}" target="_blank" rel="noopener" class="btn-book">Search Flights</a>
+                        ${airlineUrl ? `<a href="${esc(airlineUrl)}" target="_blank" rel="noopener" class="btn-airline">Airline Site</a>` : ''}
+                    </td>
                 `;
                 tbody.appendChild(row);
             }
@@ -547,6 +618,35 @@
                 for (const k in currentPage) currentPage[k] = 1;
                 applyFiltersAndRender();
             });
+        });
+
+        // ---- Connection and reliability monitoring ----
+
+        function setConnectionStatus(online) {
+            const el = document.getElementById('connection-status');
+            const text = document.getElementById('connection-text');
+            if (online) {
+                el.classList.add('hidden');
+            } else {
+                el.classList.remove('hidden');
+                el.className = 'connection-status offline';
+                text.textContent = 'Connection lost. Showing cached data. Retrying...';
+                // Attempt faster refresh when reconnected
+                window.addEventListener('online', () => {
+                    el.classList.add('hidden');
+                    triggerRefresh();
+                }, { once: true });
+            }
+        }
+
+        window.addEventListener('offline', () => setConnectionStatus(false));
+        window.addEventListener('online', () => setConnectionStatus(true));
+
+        // Warn before leaving if data is loaded (prevent accidental navigation)
+        window.addEventListener('beforeunload', (e) => {
+            if (lastData && Object.keys(lastData).length > 0) {
+                e.preventDefault();
+            }
         });
     </script>
 </body>

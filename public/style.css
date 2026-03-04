@@ -212,6 +212,46 @@ button:disabled {
     display: none;
 }
 
+/* Connection status */
+.connection-status {
+    padding: 0.6rem 1.25rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.connection-status.hidden {
+    display: none;
+}
+
+.connection-status.offline {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+}
+
+.connection-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.offline .connection-dot {
+    background: #dc2626;
+    animation: pulse-dot 1.5s infinite;
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
 /* Results */
 .airport-section {
     background: var(--surface);
@@ -339,6 +379,14 @@ tbody td {
     border: 1px solid #d1d5db;
 }
 
+/* Action cell */
+.action-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    align-items: flex-start;
+}
+
 /* Book button */
 .btn-book {
     display: inline-block;
@@ -355,6 +403,23 @@ tbody td {
 
 .btn-book:hover {
     background: #15803d;
+}
+
+.btn-airline {
+    display: inline-block;
+    padding: 0.25rem 0.6rem;
+    background: var(--accent);
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.7rem;
+    transition: background 0.2s;
+    white-space: nowrap;
+}
+
+.btn-airline:hover {
+    background: var(--accent-hover);
 }
 
 /* Pagination */
