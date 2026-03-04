@@ -1,20 +1,20 @@
-/* GCC Evacuation Flight Tracker */
+/* GCC Evacuation Flight Tracker - Light Theme */
 
 :root {
-    --bg: #0a0e17;
-    --surface: #131927;
-    --surface-2: #1a2236;
-    --border: #2a3550;
-    --text: #e0e6f0;
-    --text-muted: #8892a8;
-    --accent: #3b82f6;
-    --accent-hover: #2563eb;
-    --danger: #ef4444;
-    --warning: #f59e0b;
-    --success: #22c55e;
-    --scheduled: #3b82f6;
-    --estimated: #22c55e;
-    --delayed: #f59e0b;
+    --bg: #f3f4f6;
+    --surface: #ffffff;
+    --surface-2: #f9fafb;
+    --border: #d1d5db;
+    --text: #1f2937;
+    --text-muted: #6b7280;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --danger: #dc2626;
+    --warning: #d97706;
+    --success: #16a34a;
+    --scheduled: #2563eb;
+    --estimated: #16a34a;
+    --delayed: #d97706;
 }
 
 * {
@@ -50,9 +50,9 @@ header h1 {
 }
 
 .warning {
-    background: rgba(239, 68, 68, 0.15);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    color: #fca5a5;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
     padding: 0.5rem 1rem;
     border-radius: 6px;
     margin-top: 0.75rem;
@@ -91,7 +91,7 @@ main {
     flex: 1;
     min-width: 250px;
     padding: 0.6rem 0.75rem;
-    background: var(--surface-2);
+    background: var(--surface);
     border: 1px solid var(--border);
     color: var(--text);
     border-radius: 6px;
@@ -123,7 +123,7 @@ button {
 }
 
 #btn-scan-all:hover {
-    background: #dc2626;
+    background: #b91c1c;
 }
 
 button:disabled {
@@ -216,6 +216,33 @@ thead th {
     border-bottom: 1px solid var(--border);
 }
 
+/* Column filter row */
+.filter-row th {
+    padding: 0.35rem 0.5rem;
+    background: var(--surface);
+}
+
+.col-filter {
+    width: 100%;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    background: var(--surface);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.col-filter:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.col-filter::placeholder {
+    color: #9ca3af;
+}
+
 tbody tr {
     border-bottom: 1px solid var(--border);
     transition: background 0.15s;
@@ -254,27 +281,27 @@ tbody td {
 }
 
 .status-scheduled {
-    background: rgba(59, 130, 246, 0.15);
-    color: #93bbfd;
-    border: 1px solid rgba(59, 130, 246, 0.3);
+    background: #dbeafe;
+    color: #1e40af;
+    border: 1px solid #93c5fd;
 }
 
 .status-estimated {
-    background: rgba(34, 197, 94, 0.15);
-    color: #86efac;
-    border: 1px solid rgba(34, 197, 94, 0.3);
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #86efac;
 }
 
 .status-delayed {
-    background: rgba(245, 158, 11, 0.15);
-    color: #fcd34d;
-    border: 1px solid rgba(245, 158, 11, 0.3);
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fcd34d;
 }
 
 .status-unknown {
-    background: rgba(136, 146, 168, 0.15);
+    background: #f3f4f6;
     color: var(--text-muted);
-    border: 1px solid rgba(136, 146, 168, 0.3);
+    border: 1px solid #d1d5db;
 }
 
 /* Book button */
@@ -282,7 +309,7 @@ tbody td {
     display: inline-block;
     padding: 0.35rem 0.85rem;
     background: var(--success);
-    color: #052e16;
+    color: white;
     text-decoration: none;
     border-radius: 5px;
     font-weight: 700;
@@ -292,7 +319,7 @@ tbody td {
 }
 
 .btn-book:hover {
-    background: #16a34a;
+    background: #15803d;
 }
 
 .no-flights {

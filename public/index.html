@@ -99,6 +99,36 @@
             });
         }
 
+        // Column filter values
+        const columnFilters = {
+            flight: '',
+            airline: '',
+            destination: '',
+            departure: '',
+            status: '',
+            aircraft: '',
+        };
+
+        function applyColumnFilters(flights) {
+            return flights.filter(f => {
+                if (columnFilters.flight && !f.flight_number.toLowerCase().includes(columnFilters.flight)) return false;
+                if (columnFilters.airline && !f.airline_name.toLowerCase().includes(columnFilters.airline)) return false;
+                if (columnFilters.destination) {
+                    const destText = (f.destination_iata + ' ' + f.destination_name).toLowerCase();
+                    if (!destText.includes(columnFilters.destination)) return false;
+                }
+                if (columnFilters.departure && !f.scheduled_departure.toLowerCase().includes(columnFilters.departure)) return false;
+                if (columnFilters.status && !f.status.toLowerCase().includes(columnFilters.status)) return false;
+                if (columnFilters.aircraft && !(f.aircraft_type || '').toLowerCase().includes(columnFilters.aircraft)) return false;
+                return true;
+            });
+        }
+
+        function onColumnFilter(col, value) {
+            columnFilters[col] = value.toLowerCase().trim();
+            applyFiltersAndRender();
+        }
+
         // Store last fetched data for re-filtering
         let lastData = null;
 
@@ -138,29 +168,44 @@
             }
         }
 
+        const MAJOR_AIRPORTS = ['DXB','AUH','DOH','RUH','JED','KWI','MCT','BAH','DMM','SHJ'];
+
         async function scanAll() {
             const btn = document.getElementById('btn-scan-all');
             btn.disabled = true;
             btn.textContent = 'Scanning...';
-            showStatus('Scanning all major GCC airports (this may take a minute)...');
+            lastData = {};
+            document.getElementById('flights-container').innerHTML = '';
 
-            try {
-                const resp = await fetch(`${API_BASE}/scan`);
-                const data = await resp.json();
+            let completed = 0;
+            const total = MAJOR_AIRPORTS.length;
+            showStatus(`Scanning airports... 0/${total} done`);
 
-                if (data.error) {
-                    showStatus(`Error: ${data.error}`);
-                    return;
+            const promises = MAJOR_AIRPORTS.map(async (iata) => {
+                try {
+                    const resp = await fetch(`${API_BASE}/departures/${iata}`);
+                    const data = await resp.json();
+                    if (!data.error && data.flights) {
+                        lastData[iata] = {
+                            airport_name: data.airport_name,
+                            city: data.city,
+                            flights: data.flights,
+                        };
+                    }
+                } catch (e) {
+                    console.error(`Failed to fetch ${iata}:`, e);
                 }
-
-                lastData = data;
+                completed++;
+                showStatus(`Scanning airports... ${completed}/${total} done`);
+                // Progressive render after each airport completes
                 applyFiltersAndRender();
-            } catch (e) {
-                showStatus(`Error: ${e.message}`);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Scan All Major Airports';
-            }
+            });
+
+            await Promise.all(promises);
+
+            btn.disabled = false;
+            btn.textContent = 'Scan All Major Airports';
+            applyFiltersAndRender();
         }
 
         function applyFiltersAndRender() {
@@ -169,7 +214,8 @@
             const filtered = {};
             let totalCount = 0;
             for (const [airport, info] of Object.entries(lastData)) {
-                const flights = filterFlights(info.flights);
+                let flights = filterFlights(info.flights);
+                flights = applyColumnFilters(flights);
                 filtered[airport] = {
                     airport_name: info.airport_name,
                     city: info.city,
@@ -210,6 +256,15 @@
                             <th>Aircraft</th>
                             <th>Action</th>
                         </tr>
+                        <tr class="filter-row">
+                            <th><input type="text" placeholder="Filter..." class="col-filter" data-col="flight" value="${esc(columnFilters.flight)}"></th>
+                            <th><input type="text" placeholder="Filter..." class="col-filter" data-col="airline" value="${esc(columnFilters.airline)}"></th>
+                            <th><input type="text" placeholder="Filter..." class="col-filter" data-col="destination" value="${esc(columnFilters.destination)}"></th>
+                            <th><input type="text" placeholder="Filter..." class="col-filter" data-col="departure" value="${esc(columnFilters.departure)}"></th>
+                            <th><input type="text" placeholder="Filter..." class="col-filter" data-col="status" value="${esc(columnFilters.status)}"></th>
+                            <th><input type="text" placeholder="Filter..." class="col-filter" data-col="aircraft" value="${esc(columnFilters.aircraft)}"></th>
+                            <th></th>
+                        </tr>
                     </thead>
                 `;
 
@@ -240,6 +295,13 @@
                 section.appendChild(table);
                 container.appendChild(section);
             }
+
+            // Attach filter input listeners
+            container.querySelectorAll('.col-filter').forEach(input => {
+                input.addEventListener('input', (e) => {
+                    onColumnFilter(e.target.dataset.col, e.target.value);
+                });
+            });
 
             if (container.children.length === 0) {
                 container.innerHTML = '<p class="no-flights">No evacuation flights found matching your filters. Try adjusting the status filters or selecting a different airport.</p>';
