@@ -21,7 +21,6 @@ if _api_dir not in sys.path:
 from gcc_data import GCC_AIRPORTS, GCC_IATA_CODES, PRIMARY_DEPARTURE_AIRPORTS
 from flight_service import FlightService
 from availability_service import is_configured as amadeus_configured, check_availability as amadeus_check, batch_check as amadeus_batch
-from google_flights_service import check_availability_from_status as status_check, batch_check_from_status as status_batch
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -139,41 +138,28 @@ def api_search_destination(dest_iata: str):
     })
 
 
-def _availability_source():
-    """Return the active availability backend."""
-    if amadeus_configured():
-        return "amadeus"
-    return "flight_status"
-
-
 @app.route("/api/availability/<origin>/<dest>/<date>")
 def api_availability(origin: str, dest: str, date: str):
-    """Check seat availability for a specific route and date.
-
-    Uses Amadeus when configured, otherwise derives from flight status data.
-    """
-    source = _availability_source()
+    """Check seat availability for a specific route and date (Amadeus only)."""
+    if not amadeus_configured():
+        return jsonify({"error": "Availability checking not configured", "configured": False}), 503
 
     try:
-        if source == "amadeus":
-            result = amadeus_check(origin.upper(), dest.upper(), date)
-        else:
-            result = status_check(origin.upper(), dest.upper(), date)
+        result = amadeus_check(origin.upper(), dest.upper(), date)
         return jsonify({**result, "route": f"{origin.upper()}-{dest.upper()}", "date": date})
     except Exception as e:
-        logger.error(f"Availability check error ({source}): {e}")
+        logger.error(f"Availability check error: {e}")
         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/availability/batch", methods=["POST"])
 def api_availability_batch():
     """
-    Batch check availability for multiple routes.
+    Batch check availability for multiple routes (Amadeus only).
     Body: {"routes": [{"origin":"DXB","dest":"LHR","date":"2026-03-04"}, ...]}
-
-    Uses Amadeus when configured, otherwise derives from loaded flight data.
     """
-    source = _availability_source()
+    if not amadeus_configured():
+        return jsonify({"error": "Availability checking not configured", "configured": False}), 503
 
     try:
         body = request.get_json(force=True) or {}
@@ -183,26 +169,17 @@ def api_availability_batch():
         if len(routes) > 30:
             return jsonify({"error": "Max 30 routes per batch"}), 400
 
-        if source == "amadeus":
-            results = amadeus_batch(routes)
-        else:
-            # Pass loaded FR24 flight data so status-based check can work
-            all_flights = body.get("flight_data", None)
-            results = status_batch(routes, all_flights)
+        results = amadeus_batch(routes)
         return jsonify({"results": results, "fetched_at": _utc_now()})
     except Exception as e:
-        logger.error(f"Batch availability error ({source}): {e}")
+        logger.error(f"Batch availability error: {e}")
         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/availability/status")
 def api_availability_status():
-    """Check if availability checking is available."""
-    source = _availability_source()
-    return jsonify({
-        "configured": True,
-        "source": source,
-    })
+    """Check if Amadeus availability checking is configured."""
+    return jsonify({"configured": amadeus_configured()})
 
 
 @app.route("/api/airports")
