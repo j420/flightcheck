@@ -26,23 +26,29 @@ def index():
 
 @app.route("/api/departures/<airport_iata>")
 def api_departures(airport_iata: str):
-    """Get filtered evacuation flights from a GCC airport."""
+    """
+    Get filtered evacuation flights from a GCC airport.
+
+    CRITICAL: Never returns 500. An error page wastes evacuees' time.
+    Returns empty flights list on failure — the frontend handles it gracefully.
+    """
     airport_iata = airport_iata.upper()
     if airport_iata not in GCC_AIRPORTS:
         return jsonify({"error": f"Unknown GCC airport: {airport_iata}"}), 400
 
     try:
         flights = flight_service.get_departures(airport_iata)
-        return jsonify({
-            "airport": airport_iata,
-            "airport_name": GCC_AIRPORTS[airport_iata]["name"],
-            "city": GCC_AIRPORTS[airport_iata]["city"],
-            "count": len(flights),
-            "flights": [f.to_dict() for f in flights],
-        })
     except Exception as e:
         logger.error(f"Error fetching departures for {airport_iata}: {e}")
-        return jsonify({"error": str(e)}), 500
+        flights = []
+
+    return jsonify({
+        "airport": airport_iata,
+        "airport_name": GCC_AIRPORTS[airport_iata]["name"],
+        "city": GCC_AIRPORTS[airport_iata]["city"],
+        "count": len(flights),
+        "flights": [f.to_dict() for f in flights],
+    })
 
 
 @app.route("/api/scan")
@@ -57,18 +63,19 @@ def api_scan():
 
     try:
         results = flight_service.scan_all_gcc_departures(airports)
-        output = {}
-        for airport, flights in results.items():
-            output[airport] = {
-                "airport_name": GCC_AIRPORTS[airport]["name"],
-                "city": GCC_AIRPORTS[airport]["city"],
-                "count": len(flights),
-                "flights": [f.to_dict() for f in flights],
-            }
-        return jsonify(output)
     except Exception as e:
         logger.error(f"Error scanning airports: {e}")
-        return jsonify({"error": str(e)}), 500
+        results = {}
+
+    output = {}
+    for airport, flights in results.items():
+        output[airport] = {
+            "airport_name": GCC_AIRPORTS[airport]["name"],
+            "city": GCC_AIRPORTS[airport]["city"],
+            "count": len(flights),
+            "flights": [f.to_dict() for f in flights],
+        }
+    return jsonify(output)
 
 
 @app.route("/api/airports")

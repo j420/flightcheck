@@ -56,6 +56,7 @@ class FlightService:
 
     def __init__(self):
         self.api = FlightRadar24API()
+        self.api.timeout = 4  # Fast fail — don't block the request
         self._airport_cache: dict[str, dict] = {}
         self._airlines_cache: list[dict] | None = None
 
