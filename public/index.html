@@ -156,6 +156,15 @@
             throw lastErr;
         }
 
+        async function safeJson(resp) {
+            try {
+                return await resp.json();
+            } catch (e) {
+                const text = await resp.text().catch(() => '');
+                return { error: text || `Server error (HTTP ${resp.status})` };
+            }
+        }
+
         // ---- Status and errors ----
 
         function showStatus(msg, count) {
@@ -286,7 +295,7 @@
 
             try {
                 const resp = await fetchWithRetry(`${API_BASE}/departures/${iata}`);
-                const data = await resp.json();
+                const data = await safeJson(resp);
                 if (data.error) {
                     showError(`Error fetching ${iata}: ${data.error}`);
                     if (!lastData) showStatus('Failed to load. Retrying automatically...');
@@ -332,7 +341,7 @@
             const promises = MAJOR_AIRPORTS.map(async (iata) => {
                 try {
                     const resp = await fetchWithRetry(`${API_BASE}/departures/${iata}`);
-                    const data = await resp.json();
+                    const data = await safeJson(resp);
                     if (!data.error && data.flights) {
                         lastData[iata] = { airport_name: data.airport_name, city: data.city, flights: data.flights };
                         currentPage[iata] = currentPage[iata] || 1;
@@ -699,7 +708,7 @@
             try {
                 const resp = await fetch(`${API_BASE}/availability/status`);
                 if (resp.ok) {
-                    const data = await resp.json();
+                    const data = await safeJson(resp);
                     availabilityEnabled = data.configured;
                     if (availabilityEnabled) {
                         startAvailabilityRefresh();
@@ -772,7 +781,7 @@
                         body: JSON.stringify({ routes: chunk }),
                     });
                     if (resp.ok) {
-                        const data = await resp.json();
+                        const data = await safeJson(resp);
                         for (const [key, result] of Object.entries(data.results || {})) {
                             availabilityCache[key] = { ...result, checking: false };
                         }
