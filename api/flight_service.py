@@ -79,6 +79,7 @@ class FlightService:
 
     def __init__(self):
         self.api = FlightRadar24API()
+        self.api.timeout = 4  # Fast fail — don't let Vercel kill the function
         self._airlines_cache: list[dict] | None = None
         self._airlines_map_cache: dict[str, str] | None = None
 
@@ -88,14 +89,14 @@ class FlightService:
             return self._airlines_map_cache
 
         try:
-            airlines = _retry_api_call(self.api.get_airlines, retries=2, backoff=0.5)
+            airlines = _retry_api_call(self.api.get_airlines, retries=1, backoff=0.5)
             self._airlines_map_cache = {
                 a.get("ICAO", ""): a.get("Name", "Unknown")
                 for a in airlines
                 if a.get("ICAO")
             }
         except Exception as e:
-            logger.error(f"Failed to fetch airlines after retries: {e}")
+            logger.error(f"Failed to fetch airlines: {e}")
             self._airlines_map_cache = {}
 
         return self._airlines_map_cache
@@ -103,7 +104,10 @@ class FlightService:
     def get_departures(self, airport_iata: str) -> list[EvacFlight]:
         """
         Fetch departures from a GCC airport and filter for evacuation-viable flights.
-        Includes retry logic and cache fallback.
+
+        CRITICAL: This method NEVER raises exceptions. It returns cached data or
+        an empty list on failure. In an evacuation, partial/stale data is infinitely
+        better than an error page.
         """
         airport_iata = airport_iata.upper()
         airport_info = GCC_AIRPORTS.get(airport_iata)
@@ -111,15 +115,22 @@ class FlightService:
             logger.warning(f"Airport {airport_iata} not found in GCC data")
             return []
 
+        # Serve from cache if fresh enough (avoids unnecessary API calls)
+        cached = self._get_cached(airport_iata)
+        cache_age = self._get_cache_age(airport_iata)
+        if cached and cache_age is not None and cache_age < CACHE_TTL_SECONDS:
+            logger.info(f"Serving fresh cache for {airport_iata} (age: {cache_age:.0f}s)")
+            return cached
+
         icao = airport_info["icao"]
         all_flights = []
 
-        # Fetch page 1 with retries (most critical data)
+        # Fetch page 1 with limited retries (2 attempts total, 0.5s backoff)
         try:
             details = _retry_api_call(
                 lambda: self.api.get_airport_details(icao, flight_limit=100, page=1),
-                retries=3,
-                backoff=1.0,
+                retries=2,
+                backoff=0.5,
             )
             departures = (
                 details
@@ -132,28 +143,27 @@ class FlightService:
             all_flights.extend(departures)
         except Exception as e:
             logger.error(f"All retries failed for {airport_iata} page 1: {e}")
-            # Fall back to cache
-            return self._get_cached(airport_iata)
+            # Return stale cache (any age) — stale data beats no data
+            if cached:
+                logger.info(f"Serving stale cache for {airport_iata} ({len(cached)} flights)")
+                return cached
+            return []
 
-        # Fetch pages 2-3 best-effort (no retry, don't block on these)
-        for page in range(2, 4):
-            try:
-                details = self.api.get_airport_details(icao, flight_limit=100, page=page)
-                departures = (
-                    details
-                    .get("airport", {})
-                    .get("pluginData", {})
-                    .get("schedule", {})
-                    .get("departures", {})
-                    .get("data", [])
-                )
-                if not departures:
-                    break
+        # Page 2 best-effort only — keeps total request time under Vercel limits
+        try:
+            details = self.api.get_airport_details(icao, flight_limit=100, page=2)
+            departures = (
+                details
+                .get("airport", {})
+                .get("pluginData", {})
+                .get("schedule", {})
+                .get("departures", {})
+                .get("data", [])
+            )
+            if departures:
                 all_flights.extend(departures)
-                time.sleep(0.3)
-            except Exception as e:
-                logger.warning(f"Failed to fetch {airport_iata} page {page} (non-critical): {e}")
-                break
+        except Exception as e:
+            logger.warning(f"Failed to fetch {airport_iata} page 2 (non-critical): {e}")
 
         airlines_map = self.get_airlines_map()
         evac_flights = []
@@ -171,14 +181,20 @@ class FlightService:
         return evac_flights
 
     def _get_cached(self, airport_iata: str) -> list[EvacFlight]:
-        """Return cached results if available and not too old."""
+        """Return cached results regardless of age. Stale data beats no data."""
         with _cache_lock:
             cached = _results_cache.get(airport_iata)
         if cached:
-            age = time.time() - cached["timestamp"]
-            logger.info(f"Serving cached data for {airport_iata} (age: {age:.0f}s)")
             return cached["flights"]
         return []
+
+    def _get_cache_age(self, airport_iata: str) -> float | None:
+        """Return cache age in seconds, or None if not cached."""
+        with _cache_lock:
+            cached = _results_cache.get(airport_iata)
+        if cached:
+            return time.time() - cached["timestamp"]
+        return None
 
     def _set_cached(self, airport_iata: str, flights: list[EvacFlight]):
         """Cache results for an airport."""
