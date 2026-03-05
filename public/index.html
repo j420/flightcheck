@@ -1106,7 +1106,7 @@
 
         // ---- Suggestion box ----
 
-        function submitSuggestion(e) {
+        async function submitSuggestion(e) {
             e.preventDefault();
             const input = document.getElementById('suggestion-input');
             const feedback = document.getElementById('suggestion-feedback');
@@ -1119,14 +1119,26 @@
                 return;
             }
 
-            // Store suggestion in localStorage (persists across sessions)
-            const suggestions = JSON.parse(localStorage.getItem('flighttracker_suggestions') || '[]');
-            suggestions.push({ text, timestamp: new Date().toISOString() });
-            localStorage.setItem('flighttracker_suggestions', JSON.stringify(suggestions));
+            try {
+                const resp = await fetch(`${API_BASE}/suggestions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text }),
+                });
+                const data = await safeJson(resp);
 
-            input.value = '';
-            feedback.textContent = 'Thank you for your suggestion!';
-            feedback.className = 'suggestion-feedback success';
+                if (data.ok) {
+                    input.value = '';
+                    feedback.textContent = 'Thank you for your suggestion!';
+                    feedback.className = 'suggestion-feedback success';
+                } else {
+                    feedback.textContent = data.error || 'Failed to send suggestion.';
+                    feedback.className = 'suggestion-feedback error';
+                }
+            } catch (err) {
+                feedback.textContent = 'Network error — suggestion not sent.';
+                feedback.className = 'suggestion-feedback error';
+            }
             feedback.classList.remove('hidden');
             setTimeout(() => feedback.classList.add('hidden'), 4000);
         }

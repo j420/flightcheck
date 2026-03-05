@@ -5,10 +5,12 @@ CRITICAL: This API supports emergency evacuation operations.
 Every endpoint includes error isolation and timestamps.
 """
 
+import json
 import logging
 import os
 import sys
 from datetime import datetime, timezone
+from threading import Lock
 
 from flask import Flask, jsonify, request
 
@@ -223,6 +225,68 @@ def api_verify_batch():
 def api_verify_status():
     """Check if AviationStack verification is configured."""
     return jsonify({"configured": avstack_configured()})
+
+
+# ---------------------------------------------------------------------------
+# Suggestions
+# ---------------------------------------------------------------------------
+_suggestions: list[dict] = []
+_suggestions_lock = Lock()
+_SUGGESTIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "suggestions.json")
+
+
+def _load_suggestions():
+    """Load suggestions from disk if the file exists."""
+    try:
+        if os.path.exists(_SUGGESTIONS_FILE):
+            with open(_SUGGESTIONS_FILE, "r") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return []
+
+
+def _save_suggestions(suggestions):
+    """Best-effort persist suggestions to disk."""
+    try:
+        with open(_SUGGESTIONS_FILE, "w") as f:
+            json.dump(suggestions, f)
+    except Exception:
+        pass
+
+
+@app.route("/api/suggestions", methods=["POST"])
+def api_post_suggestion():
+    """Submit a user suggestion."""
+    try:
+        body = request.get_json(force=True) or {}
+        text = (body.get("text") or "").strip()
+        if not text:
+            return jsonify({"error": "Suggestion text is required"}), 400
+        if len(text) > 500:
+            return jsonify({"error": "Suggestion too long (max 500 chars)"}), 400
+
+        suggestion = {"text": text, "timestamp": _utc_now()}
+        with _suggestions_lock:
+            _suggestions.append(suggestion)
+            _save_suggestions(_suggestions)
+
+        logger.info(f"New suggestion: {text[:80]}")
+        return jsonify({"ok": True, "message": "Thank you for your suggestion!"})
+    except Exception as e:
+        logger.error(f"Suggestion error: {e}")
+        return jsonify({"error": "Failed to save suggestion"}), 500
+
+
+@app.route("/api/suggestions", methods=["GET"])
+def api_get_suggestions():
+    """Retrieve all suggestions (for admin review)."""
+    with _suggestions_lock:
+        return jsonify({"suggestions": list(_suggestions), "count": len(_suggestions)})
+
+
+# Load existing suggestions on startup
+_suggestions = _load_suggestions()
 
 
 @app.route("/api/airports")
