@@ -65,6 +65,14 @@ body {
     gap: 0.5rem;
 }
 
+.brand-link {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    text-decoration: none;
+    color: inherit;
+}
+
 .brand-icon {
     width: 28px;
     height: 28px;
@@ -322,6 +330,59 @@ main {
 
 @keyframes spin {
     to { transform: rotate(360deg); }
+}
+
+/* ---- Suggestion box ---- */
+
+.suggestion-box {
+    margin-bottom: 0.75rem;
+}
+
+.suggestion-inner {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.suggestion-inner .input-field {
+    flex: 1;
+    font-size: 0.82rem;
+    padding: 0.55rem 0.75rem;
+}
+
+.btn-suggestion {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.55rem 1rem;
+    background: var(--surface-alt);
+    color: var(--text-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
+}
+
+.btn-suggestion:hover {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+.suggestion-feedback {
+    font-size: 0.78rem;
+    margin: 0.4rem 0 0;
+    padding: 0;
+}
+
+.suggestion-feedback.success {
+    color: var(--success, #34d399);
+}
+
+.suggestion-feedback.error {
+    color: var(--danger);
 }
 
 /* ---- Filter bar ---- */

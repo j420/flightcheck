@@ -16,11 +16,13 @@
     <nav class="topbar">
         <div class="topbar-inner">
             <div class="brand">
-                <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-                <div>
-                    <span class="brand-title">EvacTracker</span>
-                    <span class="brand-region">GCC</span>
-                </div>
+                <a href="/" class="brand-link">
+                    <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                    <div>
+                        <span class="brand-title">FlightTracker</span>
+                        <span class="brand-region">GCC</span>
+                    </div>
+                </a>
             </div>
             <div class="topbar-right">
                 <span id="connection-pill" class="pill pill-live hidden">
@@ -109,6 +111,20 @@
                     </button>
                 </div>
             </div>
+        </section>
+
+        <!-- Suggestion box -->
+        <section class="suggestion-box">
+            <form id="suggestion-form" onsubmit="submitSuggestion(event)">
+                <div class="suggestion-inner">
+                    <input type="text" id="suggestion-input" class="input-field" placeholder="Have a suggestion or feedback? Type here..." maxlength="300" autocomplete="off">
+                    <button type="submit" class="btn-suggestion">
+                        <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"/></svg>
+                        Send
+                    </button>
+                </div>
+                <p id="suggestion-feedback" class="suggestion-feedback hidden"></p>
+            </form>
         </section>
 
         <!-- Filter bar -->
@@ -1087,6 +1103,33 @@
         }
 
         checkVerificationStatus();
+
+        // ---- Suggestion box ----
+
+        function submitSuggestion(e) {
+            e.preventDefault();
+            const input = document.getElementById('suggestion-input');
+            const feedback = document.getElementById('suggestion-feedback');
+            const text = input.value.trim();
+
+            if (!text) {
+                feedback.textContent = 'Please type a suggestion first.';
+                feedback.className = 'suggestion-feedback error';
+                feedback.classList.remove('hidden');
+                return;
+            }
+
+            // Store suggestion in localStorage (persists across sessions)
+            const suggestions = JSON.parse(localStorage.getItem('flighttracker_suggestions') || '[]');
+            suggestions.push({ text, timestamp: new Date().toISOString() });
+            localStorage.setItem('flighttracker_suggestions', JSON.stringify(suggestions));
+
+            input.value = '';
+            feedback.textContent = 'Thank you for your suggestion!';
+            feedback.className = 'suggestion-feedback success';
+            feedback.classList.remove('hidden');
+            setTimeout(() => feedback.classList.add('hidden'), 4000);
+        }
 
         // ---- Connection monitoring ----
 
