@@ -189,16 +189,27 @@ def _fetch_departures_aerodatabox(airport_iata: str) -> list[ScrapedFlight]:
     if not AERODATABOX_API_KEY:
         return []
 
-    # Build time range: from 2 hours ago to 12 hours ahead (local airport time)
-    # AeroDataBox expects local time, but also accepts UTC with offset
-    now = datetime.now(timezone.utc)
-    from_time = now - timedelta(hours=2)
-    to_time = now + timedelta(hours=12)
+    # Build time range in LOCAL airport time (AeroDataBox requires local time)
+    # GCC timezone offsets from UTC
+    _AIRPORT_UTC_OFFSETS = {
+        "DXB": 4, "AUH": 4, "SHJ": 4,  # UAE: UTC+4
+        "DOH": 3,                         # Qatar: UTC+3
+        "RUH": 3, "JED": 3, "DMM": 3,   # Saudi: UTC+3
+        "KWI": 3,                         # Kuwait: UTC+3
+        "BAH": 3,                         # Bahrain: UTC+3
+        "MCT": 4,                         # Oman: UTC+4
+        "SLL": 4,                         # Oman: UTC+4
+    }
+    utc_offset = _AIRPORT_UTC_OFFSETS.get(airport_iata, 4)
+    local_tz = timezone(timedelta(hours=utc_offset))
+    now_local = datetime.now(local_tz)
+    from_time = now_local - timedelta(hours=2)
+    to_time = now_local + timedelta(hours=12)
 
+    # AeroDataBox expects local time WITHOUT timezone offset in the URL
     from_str = from_time.strftime("%Y-%m-%dT%H:%M")
     to_str = to_time.strftime("%Y-%m-%dT%H:%M")
 
-    # Try IATA-based endpoint first
     url = (
         f"{AERODATABOX_BASE}/flights/airports/iata/{airport_iata}"
         f"/{from_str}/{to_str}"
@@ -209,14 +220,21 @@ def _fetch_departures_aerodatabox(airport_iata: str) -> list[ScrapedFlight]:
 
     try:
         req = urllib.request.Request(url)
-        req.add_header("x-rapidapi-host", AERODATABOX_HOST)
-        req.add_header("x-rapidapi-key", AERODATABOX_API_KEY)
+        req.add_header("X-RapidAPI-Host", AERODATABOX_HOST)
+        req.add_header("X-RapidAPI-Key", AERODATABOX_API_KEY)
         req.add_header("Accept", "application/json")
 
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        logger.info(f"AeroDataBox request: {url}")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read().decode("utf-8")
+            data = json.loads(raw)
     except urllib.error.HTTPError as e:
-        logger.error(f"AeroDataBox HTTP {e.code} for {airport_iata}")
+        body = ""
+        try:
+            body = e.read().decode("utf-8", errors="replace")[:500]
+        except Exception:
+            pass
+        logger.error(f"AeroDataBox HTTP {e.code} for {airport_iata}: {body}")
         return []
     except Exception as e:
         logger.error(f"AeroDataBox fetch failed for {airport_iata}: {e}")
@@ -225,7 +243,7 @@ def _fetch_departures_aerodatabox(airport_iata: str) -> list[ScrapedFlight]:
     # Parse response — AeroDataBox returns {"departures": [...]}
     departures = data.get("departures", [])
     if not departures:
-        logger.info(f"AeroDataBox returned 0 departures for {airport_iata}")
+        logger.info(f"AeroDataBox returned 0 departures for {airport_iata}. Keys: {list(data.keys())}")
         return []
 
     flights = []

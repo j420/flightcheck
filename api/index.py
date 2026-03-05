@@ -335,6 +335,76 @@ def api_airport_status_config():
     return jsonify({"configured": aerodatabox_configured()})
 
 
+@app.route("/api/airport-status/debug/<airport_iata>")
+def api_airport_status_debug(airport_iata):
+    """Debug endpoint: test AeroDataBox API for a single airport with full error details."""
+    import urllib.request
+    import urllib.error
+    from datetime import datetime, timezone, timedelta
+
+    airport_iata = airport_iata.upper()
+    api_key = os.environ.get("AERODATABOX_API_KEY", "")
+    key_preview = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else ("SET" if api_key else "NOT SET")
+
+    _offsets = {"DXB": 4, "AUH": 4, "SHJ": 4, "DOH": 3, "RUH": 3, "JED": 3, "DMM": 3, "KWI": 3, "BAH": 3, "MCT": 4, "SLL": 4}
+    utc_offset = _offsets.get(airport_iata, 4)
+    local_tz = timezone(timedelta(hours=utc_offset))
+    now_local = datetime.now(local_tz)
+    from_time = now_local - timedelta(hours=2)
+    to_time = now_local + timedelta(hours=12)
+    from_str = from_time.strftime("%Y-%m-%dT%H:%M")
+    to_str = to_time.strftime("%Y-%m-%dT%H:%M")
+
+    url = (
+        f"https://aerodatabox.p.rapidapi.com/flights/airports/iata/{airport_iata}"
+        f"/{from_str}/{to_str}"
+        f"?direction=Departure&withCancelled=true&withCodeshared=false&withLocation=false"
+    )
+
+    debug_info = {
+        "airport": airport_iata,
+        "api_key_status": key_preview,
+        "utc_now": datetime.now(timezone.utc).isoformat(),
+        "local_now": now_local.isoformat(),
+        "utc_offset": f"+{utc_offset}",
+        "request_url": url,
+    }
+
+    if not api_key:
+        debug_info["error"] = "AERODATABOX_API_KEY not set"
+        return jsonify(debug_info), 200
+
+    try:
+        req = urllib.request.Request(url)
+        req.add_header("X-RapidAPI-Host", "aerodatabox.p.rapidapi.com")
+        req.add_header("X-RapidAPI-Key", api_key)
+        req.add_header("Accept", "application/json")
+
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read().decode("utf-8")
+            data = json.loads(raw)
+            departures = data.get("departures", [])
+            debug_info["status_code"] = resp.status
+            debug_info["response_keys"] = list(data.keys())
+            debug_info["departure_count"] = len(departures)
+            if departures:
+                debug_info["first_flight"] = departures[0]
+            else:
+                debug_info["raw_response_preview"] = raw[:1000]
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8", errors="replace")[:1000]
+        except Exception:
+            pass
+        debug_info["error"] = f"HTTP {e.code}"
+        debug_info["error_body"] = body
+    except Exception as e:
+        debug_info["error"] = str(e)
+
+    return jsonify(debug_info), 200
+
+
 @app.route("/api/airports")
 def api_airports():
     """List all available GCC airports."""
