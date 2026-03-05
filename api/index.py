@@ -25,6 +25,7 @@ from aviationstack_service import is_configured as avstack_configured, check_fli
 from airport_scraper_service import (
     scrape_airport, scrape_all_airports, cross_reference,
     get_supported_airports as scraper_supported_airports,
+    is_configured as aerodatabox_configured,
     AIRPORT_SOURCES,
 )
 
@@ -318,14 +319,20 @@ def api_cross_reference(airport_iata: str):
 
 @app.route("/api/airport-status/supported")
 def api_airport_status_supported():
-    """List airports with official website scraping support."""
+    """List airports with AeroDataBox FIDS support."""
     supported = {}
     for iata, info in AIRPORT_SOURCES.items():
         supported[iata] = {
             "name": info["name"],
             "url": info["url"],
         }
-    return jsonify({"supported_airports": supported})
+    return jsonify({"supported_airports": supported, "configured": aerodatabox_configured()})
+
+
+@app.route("/api/airport-status/config")
+def api_airport_status_config():
+    """Check if AeroDataBox airport status checking is configured."""
+    return jsonify({"configured": aerodatabox_configured()})
 
 
 @app.route("/api/airports")

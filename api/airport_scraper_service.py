@@ -1,131 +1,131 @@
 """
-Airport website scraper service — direct flight status from official airport sites.
+Airport direct status service — secondary flight data via AeroDataBox FIDS API.
 
 CRITICAL: FR24 sometimes reports cancelled flights as "Scheduled". This service
-scrapes official airport departure boards as a secondary data source to cross-verify
-flight status and catch discrepancies.
+uses AeroDataBox's FIDS (Flight Information Display System) API as a secondary
+data source to cross-verify flight status and catch discrepancies.
 
-Each airport scraper is isolated — one failure never blocks others.
+Each airport is independent — one failure never blocks others.
 Results are cached with stale fallback (same pattern as flight_service.py).
 """
 
+import json
 import logging
-import re
+import os
 import time
 import urllib.request
 import urllib.error
 from dataclasses import dataclass, asdict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from threading import Lock
-
-from bs4 import BeautifulSoup
 
 from gcc_data import GCC_AIRPORTS, GCC_IATA_CODES
 
 logger = logging.getLogger(__name__)
 
-# Browser-like headers to avoid being blocked by airport sites
-_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
+# ---------------------------------------------------------------------------
+# AeroDataBox API configuration
+# ---------------------------------------------------------------------------
+# Free tier via RapidAPI: ~300 calls/month
+# Sign up at: https://rapidapi.com/aedbx-aedbx/api/aerodatabox
+AERODATABOX_API_KEY = os.environ.get("AERODATABOX_API_KEY", "")
+AERODATABOX_HOST = "aerodatabox.p.rapidapi.com"
+AERODATABOX_BASE = f"https://{AERODATABOX_HOST}"
+
+# ICAO codes for GCC airports (AeroDataBox works best with ICAO)
+_IATA_TO_ICAO = {
+    "DXB": "OMDB", "AUH": "OMAA", "SHJ": "OMSJ",
+    "DOH": "OTHH", "RUH": "OERK", "JED": "OEJN",
+    "DMM": "OEDF", "KWI": "OKBK", "BAH": "OBBI",
+    "MCT": "OOMS", "SLL": "OOSA",
 }
 
-# Cache: airport_iata -> {"flights": [...], "timestamp": float, "source_url": str}
+# Cache: airport_iata -> {"flights": [...], "timestamp": float}
 _scrape_cache: dict[str, dict] = {}
 _cache_lock = Lock()
-CACHE_TTL_SECONDS = 300  # 5 minutes — airport sites update less frequently
+CACHE_TTL_SECONDS = 300  # 5 minutes
 
-# Request timeout — fast fail, don't let Vercel kill the function
-REQUEST_TIMEOUT = 8
 
+# ---------------------------------------------------------------------------
+# Data model
+# ---------------------------------------------------------------------------
 
 @dataclass
 class ScrapedFlight:
-    """A flight parsed from an official airport departure board."""
+    """A flight from the AeroDataBox FIDS API."""
     flight_number: str
     airline: str
     destination: str
-    destination_code: str  # IATA code if we can extract it, else ""
-    scheduled_time: str    # Display string as shown on airport site
-    status: str            # Raw status from airport site
-    normalized_status: str  # One of: scheduled, delayed, cancelled, departed, boarding, unknown
-    source_airport: str    # IATA of the airport we scraped
-    source_url: str        # URL we scraped from
+    destination_code: str
+    scheduled_time: str
+    status: str
+    normalized_status: str
+    source_airport: str
+    source_url: str
 
     def to_dict(self) -> dict:
         return asdict(self)
 
 
 # ---------------------------------------------------------------------------
-# Airport site configuration
+# Airport source metadata (kept for UI display + source links)
 # ---------------------------------------------------------------------------
 
 AIRPORT_SOURCES = {
     "BAH": {
         "name": "Bahrain International Airport",
         "url": "https://www.bahrainairport.bh/flight-departures",
-        "parser": "_parse_bahrain",
     },
     "MCT": {
         "name": "Muscat International Airport",
         "url": "https://www.muscatairport.co.om/flight-status?type=2",
-        "parser": "_parse_muscat",
     },
     "SLL": {
         "name": "Salalah Airport",
         "url": "https://salalahairport.co.om/flight-status?type=2",
-        "parser": "_parse_salalah",
     },
     "KWI": {
         "name": "Kuwait International Airport",
         "url": "https://www.kuwaitairport.gov.kw/en/flights-info/flight-status/departures/",
-        "parser": "_parse_kuwait",
     },
     "DOH": {
         "name": "Hamad International Airport",
         "url": "https://dohahamadairport.com/airlines/flight-status?type=departures&day=today",
-        "parser": "_parse_doha",
     },
     "DXB": {
         "name": "Dubai International Airport",
         "url": "https://www.dubaiairports.ae/flight-information/real-time-departures",
-        "parser": "_parse_dubai",
     },
     "AUH": {
         "name": "Zayed International Airport (Abu Dhabi)",
         "url": "https://www.zayedinternationalairport.ae/en/flights-and-check-in/flight-status/departures",
-        "parser": "_parse_abudhabi",
     },
     "RUH": {
         "name": "King Khalid International Airport (Riyadh)",
         "url": "https://www.kkia.sa/en/flights/departures-and-arrivals",
-        "parser": "_parse_riyadh",
     },
     "JED": {
         "name": "King Abdulaziz International Airport (Jeddah)",
         "url": "https://www.kaia.sa/en/Flights?Departures=",
-        "parser": "_parse_jeddah",
     },
     "DMM": {
         "name": "King Fahd International Airport (Dammam)",
         "url": "https://kfia.gov.sa/",
-        "parser": "_parse_dammam",
     },
     "SHJ": {
         "name": "Sharjah International Airport",
         "url": "https://www.sharjahairport.ae/en/traveller/flight-information/passenger-departures/",
-        "parser": "_parse_sharjah",
     },
 }
 
 
+def is_configured() -> bool:
+    """Check if AeroDataBox API key is set."""
+    return bool(AERODATABOX_API_KEY)
+
+
 def get_supported_airports() -> list[str]:
-    """Return IATA codes of airports we can scrape."""
+    """Return IATA codes of airports we support."""
     return list(AIRPORT_SOURCES.keys())
 
 
@@ -134,52 +134,39 @@ def get_supported_airports() -> list[str]:
 # ---------------------------------------------------------------------------
 
 _STATUS_MAP = {
-    # Scheduled / On Time
     "scheduled": "scheduled",
     "on time": "scheduled",
-    "on-time": "scheduled",
     "confirmed": "scheduled",
     "check-in": "scheduled",
-    "check in": "scheduled",
-    "go to gate": "scheduled",
     "gate open": "scheduled",
     "gate closed": "scheduled",
     "final call": "scheduled",
-    "last call": "scheduled",
-    # Boarding
     "boarding": "boarding",
     "now boarding": "boarding",
-    # Delayed
     "delayed": "delayed",
     "late": "delayed",
     "rescheduled": "delayed",
-    # Departed
     "departed": "departed",
     "airborne": "departed",
     "en route": "departed",
     "in flight": "departed",
-    "took off": "departed",
-    # Cancelled
     "cancelled": "cancelled",
     "canceled": "cancelled",
-    "cancel": "cancelled",
-    # Diverted
     "diverted": "diverted",
-    # Landed
     "landed": "landed",
     "arrived": "landed",
+    "unknown": "unknown",
+    "expected": "scheduled",
 }
 
 
 def _normalize_status(raw_status: str) -> str:
-    """Normalize airport-specific status text to a standard value."""
+    """Normalize API status text to a standard value."""
     if not raw_status:
         return "unknown"
     cleaned = raw_status.strip().lower()
-    # Direct match
     if cleaned in _STATUS_MAP:
         return _STATUS_MAP[cleaned]
-    # Partial match — check if any key is contained in the status
     for key, val in _STATUS_MAP.items():
         if key in cleaned:
             return val
@@ -187,569 +174,163 @@ def _normalize_status(raw_status: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# HTTP fetch helper
+# AeroDataBox API caller
 # ---------------------------------------------------------------------------
 
-def _fetch_page(url: str) -> str | None:
-    """Fetch an airport webpage. Returns HTML string or None on failure."""
+def _fetch_departures_aerodatabox(airport_iata: str) -> list[ScrapedFlight]:
+    """
+    Fetch departures from AeroDataBox FIDS API.
+
+    Endpoint: GET /flights/airports/iata/{code}/{fromLocal}/{toLocal}
+    With ?direction=Departure&withCancelled=true&withCodeshared=false
+
+    Returns list of ScrapedFlight or empty list on failure.
+    """
+    if not AERODATABOX_API_KEY:
+        return []
+
+    # Build time range: from 2 hours ago to 12 hours ahead (local airport time)
+    # AeroDataBox expects local time, but also accepts UTC with offset
+    now = datetime.now(timezone.utc)
+    from_time = now - timedelta(hours=2)
+    to_time = now + timedelta(hours=12)
+
+    from_str = from_time.strftime("%Y-%m-%dT%H:%M")
+    to_str = to_time.strftime("%Y-%m-%dT%H:%M")
+
+    # Try IATA-based endpoint first
+    url = (
+        f"{AERODATABOX_BASE}/flights/airports/iata/{airport_iata}"
+        f"/{from_str}/{to_str}"
+        f"?direction=Departure&withCancelled=true&withCodeshared=false&withLocation=false"
+    )
+
+    source_url = AIRPORT_SOURCES.get(airport_iata, {}).get("url", "")
+
     try:
         req = urllib.request.Request(url)
-        for k, v in _HEADERS.items():
-            req.add_header(k, v)
-        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
-            # Handle different encodings
-            charset = resp.headers.get_content_charset() or "utf-8"
-            return resp.read().decode(charset, errors="replace")
+        req.add_header("x-rapidapi-host", AERODATABOX_HOST)
+        req.add_header("x-rapidapi-key", AERODATABOX_API_KEY)
+        req.add_header("Accept", "application/json")
+
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        logger.error(f"HTTP {e.code} fetching {url}")
-        return None
+        logger.error(f"AeroDataBox HTTP {e.code} for {airport_iata}")
+        return []
     except Exception as e:
-        logger.error(f"Failed to fetch {url}: {e}")
-        return None
+        logger.error(f"AeroDataBox fetch failed for {airport_iata}: {e}")
+        return []
 
-
-# ---------------------------------------------------------------------------
-# Generic table parser — many airport sites use HTML tables
-# ---------------------------------------------------------------------------
-
-def _parse_html_table(
-    html: str,
-    airport_iata: str,
-    source_url: str,
-    *,
-    table_selector: str | None = None,
-    flight_col: int = 0,
-    airline_col: int = 1,
-    dest_col: int = 2,
-    time_col: int = 3,
-    status_col: int = 4,
-    min_cols: int = 4,
-) -> list[ScrapedFlight]:
-    """
-    Generic parser for airport sites that render flights in HTML tables.
-
-    Column indices are configurable per airport. Gracefully handles
-    missing columns by returning partial data rather than failing.
-    """
-    soup = BeautifulSoup(html, "html.parser")
-
-    # Find the flight table
-    if table_selector:
-        table = soup.select_one(table_selector)
-    else:
-        # Try common patterns
-        table = (
-            soup.select_one("table.flight-table")
-            or soup.select_one("table.departures-table")
-            or soup.select_one("table.flights")
-            or soup.select_one("#departures table")
-            or soup.select_one(".departures table")
-            or soup.select_one(".flight-board table")
-            or soup.select_one("[data-flights] table")
-            or soup.find("table")
-        )
-
-    if not table:
-        logger.warning(f"No flight table found for {airport_iata}")
+    # Parse response — AeroDataBox returns {"departures": [...]}
+    departures = data.get("departures", [])
+    if not departures:
+        logger.info(f"AeroDataBox returned 0 departures for {airport_iata}")
         return []
 
     flights = []
-    rows = table.find_all("tr")
-
-    for row in rows[1:]:  # Skip header row
-        cells = row.find_all(["td", "th"])
-        if len(cells) < min_cols:
-            continue
-
+    for dep in departures:
         try:
-            flight_num = _clean_text(cells[flight_col])
-            airline = _clean_text(cells[airline_col]) if airline_col < len(cells) else ""
-            dest_text = _clean_text(cells[dest_col]) if dest_col < len(cells) else ""
-            sched_time = _clean_text(cells[time_col]) if time_col < len(cells) else ""
-            status_text = _clean_text(cells[status_col]) if status_col < len(cells) else ""
-
+            # Flight number
+            flight_num = dep.get("number", "")
             if not flight_num:
                 continue
 
-            # Try to extract IATA code from destination text
-            dest_code = _extract_iata_code(dest_text)
+            # Airline
+            airline_obj = dep.get("airline", {})
+            airline_name = airline_obj.get("name", "")
+
+            # Destination
+            arrival = dep.get("arrival", {})
+            arrival_airport = arrival.get("airport", {})
+            dest_name = arrival_airport.get("name", "")
+            dest_code = arrival_airport.get("iata", "")
+
+            # Scheduled time
+            departure_info = dep.get("departure", {})
+            sched_local = departure_info.get("scheduledTimeLocal", "")
+            # Extract just the time part: "2026-03-05T14:30+04:00" -> "14:30"
+            sched_display = _extract_time(sched_local)
+
+            # Status
+            raw_status = dep.get("status", "Unknown")
+            normalized = _normalize_status(raw_status)
 
             flights.append(ScrapedFlight(
                 flight_number=flight_num,
-                airline=airline,
-                destination=dest_text,
+                airline=airline_name,
+                destination=dest_name,
                 destination_code=dest_code,
-                scheduled_time=sched_time,
-                status=status_text,
-                normalized_status=_normalize_status(status_text),
+                scheduled_time=sched_display,
+                status=raw_status,
+                normalized_status=normalized,
                 source_airport=airport_iata,
                 source_url=source_url,
             ))
         except Exception as e:
-            logger.debug(f"Skipping row in {airport_iata}: {e}")
+            logger.debug(f"Skipping flight in {airport_iata}: {e}")
             continue
 
     return flights
 
 
-def _parse_html_divs(
-    html: str,
-    airport_iata: str,
-    source_url: str,
-    *,
-    container_selector: str,
-    flight_selector: str = ".flight-number",
-    airline_selector: str = ".airline",
-    dest_selector: str = ".destination",
-    time_selector: str = ".time, .scheduled",
-    status_selector: str = ".status",
-) -> list[ScrapedFlight]:
-    """
-    Parser for airport sites that use div-based layouts instead of tables.
-    Common in modern responsive airport sites.
-    """
-    soup = BeautifulSoup(html, "html.parser")
-    container = soup.select(container_selector)
-
-    if not container:
-        logger.warning(f"No flight containers found for {airport_iata} with selector '{container_selector}'")
-        return []
-
-    flights = []
-    for item in container:
-        try:
-            flight_num = _select_text(item, flight_selector)
-            if not flight_num:
-                continue
-
-            airline = _select_text(item, airline_selector)
-            dest_text = _select_text(item, dest_selector)
-            sched_time = _select_text(item, time_selector)
-            status_text = _select_text(item, status_selector)
-            dest_code = _extract_iata_code(dest_text)
-
-            flights.append(ScrapedFlight(
-                flight_number=flight_num,
-                airline=airline,
-                destination=dest_text,
-                destination_code=dest_code,
-                scheduled_time=sched_time,
-                status=status_text,
-                normalized_status=_normalize_status(status_text),
-                source_airport=airport_iata,
-                source_url=source_url,
-            ))
-        except Exception as e:
-            logger.debug(f"Skipping div item in {airport_iata}: {e}")
-            continue
-
-    return flights
-
-
-# ---------------------------------------------------------------------------
-# Per-airport parsers
-# ---------------------------------------------------------------------------
-
-def _parse_bahrain(html: str) -> list[ScrapedFlight]:
-    """
-    Parse Bahrain Airport departure board.
-    bahrainairport.bh uses a table-based layout with flight info.
-    """
-    source = AIRPORT_SOURCES["BAH"]
-
-    # Try table-based parsing first
-    flights = _parse_html_table(
-        html, "BAH", source["url"],
-        flight_col=0, airline_col=1, dest_col=2, time_col=3, status_col=4,
-    )
-
-    # Fallback: try div-based selectors common on this site
-    if not flights:
-        flights = _parse_html_divs(
-            html, "BAH", source["url"],
-            container_selector=".flight-row, .flight-item, .departures-row, [class*='flight']",
-        )
-
-    # Final fallback: broad search
-    if not flights:
-        flights = _broad_parse(html, "BAH", source["url"])
-
-    return flights
-
-
-def _parse_muscat(html: str) -> list[ScrapedFlight]:
-    """
-    Parse Muscat International Airport departure board.
-    muscatairport.co.om — Oman Airports Management Company site.
-    """
-    source = AIRPORT_SOURCES["MCT"]
-
-    flights = _parse_html_table(
-        html, "MCT", source["url"],
-        flight_col=0, airline_col=1, dest_col=2, time_col=3, status_col=4,
-    )
-
-    if not flights:
-        flights = _parse_html_divs(
-            html, "MCT", source["url"],
-            container_selector=".flight-row, .flight-item, .departures-row, [class*='flight']",
-        )
-
-    if not flights:
-        flights = _broad_parse(html, "MCT", source["url"])
-
-    return flights
-
-
-def _parse_salalah(html: str) -> list[ScrapedFlight]:
-    """
-    Parse Salalah Airport departure board.
-    salalahairport.co.om — same operator as Muscat (OAMC), similar structure.
-    """
-    source = AIRPORT_SOURCES["SLL"]
-
-    flights = _parse_html_table(
-        html, "SLL", source["url"],
-        flight_col=0, airline_col=1, dest_col=2, time_col=3, status_col=4,
-    )
-
-    if not flights:
-        flights = _parse_html_divs(
-            html, "SLL", source["url"],
-            container_selector=".flight-row, .flight-item, .departures-row, [class*='flight']",
-        )
-
-    if not flights:
-        flights = _broad_parse(html, "SLL", source["url"])
-
-    return flights
-
-
-def _parse_kuwait(html: str) -> list[ScrapedFlight]:
-    """
-    Parse Kuwait Airport departure board.
-    kuwaitairport.gov.kw — government site, typically table-based.
-    """
-    source = AIRPORT_SOURCES["KWI"]
-
-    flights = _parse_html_table(
-        html, "KWI", source["url"],
-        flight_col=0, airline_col=1, dest_col=2, time_col=3, status_col=4,
-    )
-
-    if not flights:
-        flights = _parse_html_divs(
-            html, "KWI", source["url"],
-            container_selector=".flight-row, .flight-item, .departures-row, .flight-info, [class*='flight']",
-        )
-
-    if not flights:
-        flights = _broad_parse(html, "KWI", source["url"])
-
-    return flights
-
-
-def _parse_doha(html: str) -> list[ScrapedFlight]:
-    """
-    Parse Hamad International Airport (Doha) departure board.
-    dohahamadairport.com — modern site, may use JS rendering.
-    """
-    source = AIRPORT_SOURCES["DOH"]
-
-    # Doha's site often uses a flight-status component with specific classes
-    flights = _parse_html_divs(
-        html, "DOH", source["url"],
-        container_selector=".flight-status-row, .flight-row, .flight-item, [class*='flight-status']",
-    )
-
-    if not flights:
-        flights = _parse_html_table(
-            html, "DOH", source["url"],
-            flight_col=0, airline_col=1, dest_col=2, time_col=3, status_col=4,
-        )
-
-    if not flights:
-        flights = _broad_parse(html, "DOH", source["url"])
-
-    return flights
-
-
-def _parse_dubai(html: str) -> list[ScrapedFlight]:
-    """
-    Parse Dubai International Airport departure board.
-    dubaiairports.ae — may load flights via JS/API.
-    """
-    source = AIRPORT_SOURCES["DXB"]
-
-    flights = _parse_html_table(
-        html, "DXB", source["url"],
-        flight_col=0, airline_col=1, dest_col=2, time_col=3, status_col=4,
-    )
-
-    if not flights:
-        flights = _parse_html_divs(
-            html, "DXB", source["url"],
-            container_selector=".flight-row, .flight-item, [class*='flight'], [class*='departure']",
-        )
-
-    if not flights:
-        flights = _broad_parse(html, "DXB", source["url"])
-
-    return flights
-
-
-def _parse_abudhabi(html: str) -> list[ScrapedFlight]:
-    """
-    Parse Zayed International Airport (Abu Dhabi) departure board.
-    zayedinternationalairport.ae — modern site, likely div-based or JS-rendered.
-    """
-    source = AIRPORT_SOURCES["AUH"]
-
-    flights = _parse_html_divs(
-        html, "AUH", source["url"],
-        container_selector=".flight-row, .flight-item, [class*='flight'], [class*='departure']",
-    )
-
-    if not flights:
-        flights = _parse_html_table(
-            html, "AUH", source["url"],
-            flight_col=0, airline_col=1, dest_col=2, time_col=3, status_col=4,
-        )
-
-    if not flights:
-        flights = _broad_parse(html, "AUH", source["url"])
-
-    return flights
-
-
-def _parse_riyadh(html: str) -> list[ScrapedFlight]:
-    """
-    Parse King Khalid International Airport (Riyadh) departure board.
-    kkia.sa — Saudi airport authority site.
-    """
-    source = AIRPORT_SOURCES["RUH"]
-
-    flights = _parse_html_table(
-        html, "RUH", source["url"],
-        flight_col=0, airline_col=1, dest_col=2, time_col=3, status_col=4,
-    )
-
-    if not flights:
-        flights = _parse_html_divs(
-            html, "RUH", source["url"],
-            container_selector=".flight-row, .flight-item, [class*='flight'], [class*='departure']",
-        )
-
-    if not flights:
-        flights = _broad_parse(html, "RUH", source["url"])
-
-    return flights
-
-
-def _parse_jeddah(html: str) -> list[ScrapedFlight]:
-    """
-    Parse King Abdulaziz International Airport (Jeddah) departure board.
-    kaia.sa — Saudi airport authority site.
-    """
-    source = AIRPORT_SOURCES["JED"]
-
-    flights = _parse_html_table(
-        html, "JED", source["url"],
-        flight_col=0, airline_col=1, dest_col=2, time_col=3, status_col=4,
-    )
-
-    if not flights:
-        flights = _parse_html_divs(
-            html, "JED", source["url"],
-            container_selector=".flight-row, .flight-item, [class*='flight'], [class*='departure']",
-        )
-
-    if not flights:
-        flights = _broad_parse(html, "JED", source["url"])
-
-    return flights
-
-
-def _parse_dammam(html: str) -> list[ScrapedFlight]:
-    """
-    Parse King Fahd International Airport (Dammam) departure board.
-    kfia.gov.sa — may not have a dedicated departures page, best-effort.
-    """
-    source = AIRPORT_SOURCES["DMM"]
-
-    flights = _parse_html_table(
-        html, "DMM", source["url"],
-        flight_col=0, airline_col=1, dest_col=2, time_col=3, status_col=4,
-    )
-
-    if not flights:
-        flights = _parse_html_divs(
-            html, "DMM", source["url"],
-            container_selector=".flight-row, .flight-item, [class*='flight'], [class*='departure']",
-        )
-
-    if not flights:
-        flights = _broad_parse(html, "DMM", source["url"])
-
-    return flights
-
-
-def _parse_sharjah(html: str) -> list[ScrapedFlight]:
-    """
-    Parse Sharjah International Airport departure board.
-    sharjahairport.ae — has a dedicated passenger departures page.
-    """
-    source = AIRPORT_SOURCES["SHJ"]
-
-    flights = _parse_html_table(
-        html, "SHJ", source["url"],
-        flight_col=0, airline_col=1, dest_col=2, time_col=3, status_col=4,
-    )
-
-    if not flights:
-        flights = _parse_html_divs(
-            html, "SHJ", source["url"],
-            container_selector=".flight-row, .flight-item, [class*='flight'], [class*='departure']",
-        )
-
-    if not flights:
-        flights = _broad_parse(html, "SHJ", source["url"])
-
-    return flights
-
-
-# ---------------------------------------------------------------------------
-# Broad fallback parser — tries to find any flight-like data in the HTML
-# ---------------------------------------------------------------------------
-
-def _broad_parse(html: str, airport_iata: str, source_url: str) -> list[ScrapedFlight]:
-    """
-    Last-resort parser that searches for flight number patterns in the HTML
-    and tries to extract surrounding context. Better than returning nothing.
-    """
-    soup = BeautifulSoup(html, "html.parser")
-    text = soup.get_text(" ", strip=True)
-
-    # Find flight numbers (2-letter airline code + 1-4 digit number)
-    flight_pattern = re.compile(r'\b([A-Z]{2}\s?\d{1,4})\b')
-    matches = flight_pattern.findall(text)
-
-    if not matches:
-        logger.info(f"No flight numbers found in broad parse for {airport_iata}")
-        return []
-
-    flights = []
-    seen = set()
-    for match in matches:
-        fn = match.replace(" ", "")
-        if fn in seen:
-            continue
-        seen.add(fn)
-
-        flights.append(ScrapedFlight(
-            flight_number=fn,
-            airline="",
-            destination="",
-            destination_code="",
-            scheduled_time="",
-            status="",
-            normalized_status="unknown",
-            source_airport=airport_iata,
-            source_url=source_url,
-        ))
-
-    return flights
-
-
-# ---------------------------------------------------------------------------
-# Utility helpers
-# ---------------------------------------------------------------------------
-
-def _clean_text(element) -> str:
-    """Extract clean text from a BeautifulSoup element."""
-    if element is None:
+def _extract_time(iso_str: str) -> str:
+    """Extract HH:MM from an ISO datetime string like '2026-03-05T14:30+04:00'."""
+    if not iso_str:
         return ""
-    return " ".join(element.get_text(strip=True).split())
-
-
-def _select_text(parent, selector: str) -> str:
-    """Select first matching element and return its text."""
-    # Handle comma-separated selectors
-    el = parent.select_one(selector)
-    if el:
-        return _clean_text(el)
-    return ""
-
-
-def _extract_iata_code(text: str) -> str:
-    """Try to extract a 3-letter IATA airport code from text."""
-    if not text:
-        return ""
-    # Look for parenthesized codes like "London (LHR)" or "LHR - London"
-    paren_match = re.search(r'\(([A-Z]{3})\)', text)
-    if paren_match:
-        return paren_match.group(1)
-    # Look for standalone 3-letter codes
-    code_match = re.search(r'\b([A-Z]{3})\b', text)
-    if code_match:
-        candidate = code_match.group(1)
-        # Avoid matching common English words that are 3 uppercase letters
-        if candidate not in {"THE", "AND", "FOR", "NOT", "ALL", "BUT", "ARE", "WAS", "HAS", "NEW", "VIA"}:
-            return candidate
-    return ""
+    try:
+        # Handle both "2026-03-05T14:30+04:00" and "2026-03-05 14:30"
+        if "T" in iso_str:
+            time_part = iso_str.split("T")[1]
+            # Remove timezone offset if present
+            for sep in ("+", "-"):
+                if sep in time_part and time_part.index(sep) > 0:
+                    time_part = time_part[:time_part.index(sep)]
+                    break
+            return time_part[:5]  # "14:30"
+        return iso_str[:5]
+    except Exception:
+        return iso_str
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
-# Parser dispatch table
-_PARSERS = {
-    "_parse_bahrain": _parse_bahrain,
-    "_parse_muscat": _parse_muscat,
-    "_parse_salalah": _parse_salalah,
-    "_parse_kuwait": _parse_kuwait,
-    "_parse_doha": _parse_doha,
-    "_parse_dubai": _parse_dubai,
-    "_parse_abudhabi": _parse_abudhabi,
-    "_parse_riyadh": _parse_riyadh,
-    "_parse_jeddah": _parse_jeddah,
-    "_parse_dammam": _parse_dammam,
-    "_parse_sharjah": _parse_sharjah,
-}
-
-
 def scrape_airport(airport_iata: str) -> dict:
     """
-    Scrape departure data from an airport's official website.
+    Get departure data for an airport via AeroDataBox FIDS API.
 
     Returns:
         {
-            "airport": "BAH",
-            "airport_name": "Bahrain International Airport",
+            "airport": "DXB",
+            "airport_name": "Dubai International Airport",
             "source_url": "https://...",
             "flights": [ScrapedFlight.to_dict(), ...],
             "flight_count": int,
             "scraped_at": "2026-03-05 12:00:00 UTC",
             "from_cache": bool,
             "error": str | None,
+            "configured": bool,
         }
     """
     airport_iata = airport_iata.upper()
+    source = AIRPORT_SOURCES.get(airport_iata, {})
+    airport_name = source.get("name", GCC_AIRPORTS.get(airport_iata, {}).get("name", "Unknown"))
+    source_url = source.get("url", "")
 
-    if airport_iata not in AIRPORT_SOURCES:
+    if not AERODATABOX_API_KEY:
         return {
             "airport": airport_iata,
-            "airport_name": GCC_AIRPORTS.get(airport_iata, {}).get("name", "Unknown"),
-            "source_url": "",
+            "airport_name": airport_name,
+            "source_url": source_url,
             "flights": [],
             "flight_count": 0,
             "scraped_at": _utc_now(),
             "from_cache": False,
-            "error": f"No scraper configured for {airport_iata}",
+            "error": "AeroDataBox API not configured — set AERODATABOX_API_KEY",
+            "configured": False,
         }
-
-    source = AIRPORT_SOURCES[airport_iata]
 
     # Check cache
     cached = _get_cached(airport_iata)
@@ -757,95 +338,68 @@ def scrape_airport(airport_iata: str) -> dict:
     if cached is not None and cache_age is not None and cache_age < CACHE_TTL_SECONDS:
         return {
             "airport": airport_iata,
-            "airport_name": source["name"],
-            "source_url": source["url"],
+            "airport_name": airport_name,
+            "source_url": source_url,
             "flights": [f.to_dict() for f in cached],
             "flight_count": len(cached),
             "scraped_at": _utc_now(),
             "from_cache": True,
             "error": None,
+            "configured": True,
         }
 
-    # Fetch the page
-    html = _fetch_page(source["url"])
-    if not html:
-        # Serve stale cache if available
-        if cached is not None:
-            logger.info(f"Serving stale cache for {airport_iata} scraper ({len(cached)} flights)")
-            return {
-                "airport": airport_iata,
-                "airport_name": source["name"],
-                "source_url": source["url"],
-                "flights": [f.to_dict() for f in cached],
-                "flight_count": len(cached),
-                "scraped_at": _utc_now(),
-                "from_cache": True,
-                "error": "Failed to fetch — showing cached data",
-            }
+    # Fetch from API
+    flights = _fetch_departures_aerodatabox(airport_iata)
+
+    if not flights and cached is not None:
+        # Serve stale cache on failure
+        logger.info(f"Serving stale cache for {airport_iata} ({len(cached)} flights)")
         return {
             "airport": airport_iata,
-            "airport_name": source["name"],
-            "source_url": source["url"],
+            "airport_name": airport_name,
+            "source_url": source_url,
+            "flights": [f.to_dict() for f in cached],
+            "flight_count": len(cached),
+            "scraped_at": _utc_now(),
+            "from_cache": True,
+            "error": "API fetch failed — showing cached data",
+            "configured": True,
+        }
+
+    if not flights:
+        return {
+            "airport": airport_iata,
+            "airport_name": airport_name,
+            "source_url": source_url,
             "flights": [],
             "flight_count": 0,
             "scraped_at": _utc_now(),
             "from_cache": False,
-            "error": "Failed to fetch airport page",
+            "error": "No departures returned from AeroDataBox",
+            "configured": True,
         }
-
-    # Parse flights
-    parser_name = source["parser"]
-    parser_fn = _PARSERS.get(parser_name)
-    if not parser_fn:
-        return {
-            "airport": airport_iata,
-            "airport_name": source["name"],
-            "source_url": source["url"],
-            "flights": [],
-            "flight_count": 0,
-            "scraped_at": _utc_now(),
-            "from_cache": False,
-            "error": f"Parser '{parser_name}' not found",
-        }
-
-    try:
-        flights = parser_fn(html)
-    except Exception as e:
-        logger.error(f"Parser error for {airport_iata}: {e}")
-        # Serve stale cache
-        if cached is not None:
-            return {
-                "airport": airport_iata,
-                "airport_name": source["name"],
-                "source_url": source["url"],
-                "flights": [f.to_dict() for f in cached],
-                "flight_count": len(cached),
-                "scraped_at": _utc_now(),
-                "from_cache": True,
-                "error": f"Parse error — showing cached data: {e}",
-            }
-        flights = []
 
     # Cache the results
     _set_cached(airport_iata, flights)
 
     return {
         "airport": airport_iata,
-        "airport_name": source["name"],
-        "source_url": source["url"],
+        "airport_name": airport_name,
+        "source_url": source_url,
         "flights": [f.to_dict() for f in flights],
         "flight_count": len(flights),
         "scraped_at": _utc_now(),
         "from_cache": False,
         "error": None,
+        "configured": True,
     }
 
 
 def scrape_all_airports(airports: list[str] | None = None) -> dict[str, dict]:
     """
-    Scrape multiple airport sites. Each airport is independent.
+    Fetch departure data for multiple airports. Each airport is independent.
 
-    Returns: {"BAH": {scrape result}, "DOH": {scrape result}, ...}
+    Returns: {"DXB": {result}, "DOH": {result}, ...}
     """
     if airports is None:
         airports = list(AIRPORT_SOURCES.keys())
@@ -858,7 +412,7 @@ def scrape_all_airports(airports: list[str] | None = None) -> dict[str, dict]:
         try:
             results[iata] = scrape_airport(iata)
         except Exception as e:
-            logger.error(f"Unexpected error scraping {iata}: {e}")
+            logger.error(f"Unexpected error fetching {iata}: {e}")
             results[iata] = {
                 "airport": iata,
                 "airport_name": AIRPORT_SOURCES.get(iata, {}).get("name", "Unknown"),
@@ -868,8 +422,9 @@ def scrape_all_airports(airports: list[str] | None = None) -> dict[str, dict]:
                 "scraped_at": _utc_now(),
                 "from_cache": False,
                 "error": str(e),
+                "configured": is_configured(),
             }
-        # Small delay between airports to be respectful
+        # Small delay between airports to respect rate limits
         time.sleep(0.3)
 
     return results
@@ -880,17 +435,13 @@ def cross_reference(
     scraped_flights: list[dict],
 ) -> list[dict]:
     """
-    Cross-reference FR24 flights with airport-scraped data.
+    Cross-reference FR24 flights with AeroDataBox data.
 
-    If an FR24 flight shows as "scheduled" but the airport site shows
-    "cancelled", flag it. This catches FR24's known reliability gaps.
+    If FR24 shows "scheduled" but AeroDataBox shows "cancelled", flag it.
+    This catches FR24's known reliability gaps.
 
-    Returns a list of discrepancy dicts:
-        [{"flight_number": "EK202", "fr24_status": "Scheduled",
-          "airport_status": "cancelled", "source_airport": "DXB",
-          "recommendation": "LIKELY CANCELLED"}, ...]
+    Returns a list of discrepancy dicts.
     """
-    # Build lookup from scraped flights: flight_number -> scraped info
     scraped_map: dict[str, dict] = {}
     for sf in scraped_flights:
         fn = sf.get("flight_number", "").replace(" ", "").upper()
@@ -907,7 +458,7 @@ def cross_reference(
         fr24_status = (fr24.get("status") or "").lower()
         airport_status = scraped.get("normalized_status", "unknown")
 
-        # Key discrepancy: FR24 says active, airport says cancelled
+        # Key discrepancy: FR24 says active, AeroDataBox says cancelled
         if fr24_status in ("scheduled", "estimated", "unknown") and airport_status == "cancelled":
             discrepancies.append({
                 "flight_number": fn,
@@ -918,7 +469,6 @@ def cross_reference(
                 "source_url": scraped.get("source_url", ""),
                 "recommendation": "LIKELY CANCELLED",
             })
-        # FR24 says active, airport says delayed
         elif fr24_status == "scheduled" and airport_status == "delayed":
             discrepancies.append({
                 "flight_number": fn,
