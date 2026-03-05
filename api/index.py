@@ -22,6 +22,11 @@ from gcc_data import GCC_AIRPORTS, GCC_IATA_CODES, PRIMARY_DEPARTURE_AIRPORTS
 from flight_service import FlightService
 from availability_service import is_configured as amadeus_configured, check_availability as amadeus_check, batch_check as amadeus_batch
 from aviationstack_service import is_configured as avstack_configured, check_flight_status as avstack_check, batch_verify_flights as avstack_batch
+from airport_scraper_service import (
+    scrape_airport, scrape_all_airports, cross_reference,
+    get_supported_airports as scraper_supported_airports,
+    AIRPORT_SOURCES,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -223,6 +228,104 @@ def api_verify_batch():
 def api_verify_status():
     """Check if AviationStack verification is configured."""
     return jsonify({"configured": avstack_configured()})
+
+
+@app.route("/api/airport-status/<airport_iata>")
+def api_airport_status(airport_iata: str):
+    """
+    Scrape departure data directly from an airport's official website.
+
+    This provides a secondary data source to cross-verify FR24 data.
+    CRITICAL: Never returns 500 — returns empty results on failure.
+    """
+    airport_iata = airport_iata.upper()
+    try:
+        result = scrape_airport(airport_iata)
+    except Exception as e:
+        logger.error(f"Airport scraper error for {airport_iata}: {e}")
+        result = {
+            "airport": airport_iata,
+            "airport_name": AIRPORT_SOURCES.get(airport_iata, {}).get("name", "Unknown"),
+            "source_url": AIRPORT_SOURCES.get(airport_iata, {}).get("url", ""),
+            "flights": [],
+            "flight_count": 0,
+            "scraped_at": _utc_now(),
+            "from_cache": False,
+            "error": str(e),
+        }
+    return jsonify(result)
+
+
+@app.route("/api/airport-status/scan")
+def api_airport_status_scan():
+    """
+    Scrape departure data from all supported airport websites.
+    Each airport is independent — one failure never blocks others.
+    """
+    airports_param = request.args.get("airports", "")
+    if airports_param:
+        airports = [a.strip().upper() for a in airports_param.split(",")]
+    else:
+        airports = None  # defaults to all supported airports
+
+    try:
+        results = scrape_all_airports(airports)
+    except Exception as e:
+        logger.error(f"Airport scraper scan error: {e}")
+        results = {}
+
+    return jsonify({"scraped_at": _utc_now(), "airports": results})
+
+
+@app.route("/api/airport-status/cross-reference/<airport_iata>")
+def api_cross_reference(airport_iata: str):
+    """
+    Cross-reference FR24 data with airport website data for a specific airport.
+
+    Returns discrepancies — e.g., flights FR24 shows as "scheduled" but the
+    airport website shows as "cancelled". These are the dangerous false positives.
+    """
+    airport_iata = airport_iata.upper()
+
+    # Get FR24 flights
+    try:
+        fr24_flights = flight_service.get_departures(airport_iata)
+        fr24_dicts = [f.to_dict() for f in fr24_flights]
+    except Exception as e:
+        logger.error(f"FR24 error during cross-ref for {airport_iata}: {e}")
+        fr24_dicts = []
+
+    # Get scraped flights
+    try:
+        scrape_result = scrape_airport(airport_iata)
+        scraped_dicts = scrape_result.get("flights", [])
+    except Exception as e:
+        logger.error(f"Scraper error during cross-ref for {airport_iata}: {e}")
+        scraped_dicts = []
+
+    # Cross-reference
+    discrepancies = cross_reference(fr24_dicts, scraped_dicts)
+
+    return jsonify({
+        "airport": airport_iata,
+        "fr24_count": len(fr24_dicts),
+        "scraped_count": len(scraped_dicts),
+        "discrepancies": discrepancies,
+        "discrepancy_count": len(discrepancies),
+        "checked_at": _utc_now(),
+    })
+
+
+@app.route("/api/airport-status/supported")
+def api_airport_status_supported():
+    """List airports with official website scraping support."""
+    supported = {}
+    for iata, info in AIRPORT_SOURCES.items():
+        supported[iata] = {
+            "name": info["name"],
+            "url": info["url"],
+        }
+    return jsonify({"supported_airports": supported})
 
 
 @app.route("/api/airports")
