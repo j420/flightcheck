@@ -96,6 +96,31 @@ AIRPORT_SOURCES = {
         "url": "https://www.dubaiairports.ae/flight-information/real-time-departures",
         "parser": "_parse_dubai",
     },
+    "AUH": {
+        "name": "Zayed International Airport (Abu Dhabi)",
+        "url": "https://www.zayedinternationalairport.ae/en/flights-and-check-in/flight-status/departures",
+        "parser": "_parse_abudhabi",
+    },
+    "RUH": {
+        "name": "King Khalid International Airport (Riyadh)",
+        "url": "https://www.kkia.sa/en/flights/departures-and-arrivals",
+        "parser": "_parse_riyadh",
+    },
+    "JED": {
+        "name": "King Abdulaziz International Airport (Jeddah)",
+        "url": "https://www.kaia.sa/en/Flights?Departures=",
+        "parser": "_parse_jeddah",
+    },
+    "DMM": {
+        "name": "King Fahd International Airport (Dammam)",
+        "url": "https://kfia.gov.sa/",
+        "parser": "_parse_dammam",
+    },
+    "SHJ": {
+        "name": "Sharjah International Airport",
+        "url": "https://www.sharjahairport.ae/en/traveller/flight-information/passenger-departures/",
+        "parser": "_parse_sharjah",
+    },
 }
 
 
@@ -473,6 +498,126 @@ def _parse_dubai(html: str) -> list[ScrapedFlight]:
     return flights
 
 
+def _parse_abudhabi(html: str) -> list[ScrapedFlight]:
+    """
+    Parse Zayed International Airport (Abu Dhabi) departure board.
+    zayedinternationalairport.ae — modern site, likely div-based or JS-rendered.
+    """
+    source = AIRPORT_SOURCES["AUH"]
+
+    flights = _parse_html_divs(
+        html, "AUH", source["url"],
+        container_selector=".flight-row, .flight-item, [class*='flight'], [class*='departure']",
+    )
+
+    if not flights:
+        flights = _parse_html_table(
+            html, "AUH", source["url"],
+            flight_col=0, airline_col=1, dest_col=2, time_col=3, status_col=4,
+        )
+
+    if not flights:
+        flights = _broad_parse(html, "AUH", source["url"])
+
+    return flights
+
+
+def _parse_riyadh(html: str) -> list[ScrapedFlight]:
+    """
+    Parse King Khalid International Airport (Riyadh) departure board.
+    kkia.sa — Saudi airport authority site.
+    """
+    source = AIRPORT_SOURCES["RUH"]
+
+    flights = _parse_html_table(
+        html, "RUH", source["url"],
+        flight_col=0, airline_col=1, dest_col=2, time_col=3, status_col=4,
+    )
+
+    if not flights:
+        flights = _parse_html_divs(
+            html, "RUH", source["url"],
+            container_selector=".flight-row, .flight-item, [class*='flight'], [class*='departure']",
+        )
+
+    if not flights:
+        flights = _broad_parse(html, "RUH", source["url"])
+
+    return flights
+
+
+def _parse_jeddah(html: str) -> list[ScrapedFlight]:
+    """
+    Parse King Abdulaziz International Airport (Jeddah) departure board.
+    kaia.sa — Saudi airport authority site.
+    """
+    source = AIRPORT_SOURCES["JED"]
+
+    flights = _parse_html_table(
+        html, "JED", source["url"],
+        flight_col=0, airline_col=1, dest_col=2, time_col=3, status_col=4,
+    )
+
+    if not flights:
+        flights = _parse_html_divs(
+            html, "JED", source["url"],
+            container_selector=".flight-row, .flight-item, [class*='flight'], [class*='departure']",
+        )
+
+    if not flights:
+        flights = _broad_parse(html, "JED", source["url"])
+
+    return flights
+
+
+def _parse_dammam(html: str) -> list[ScrapedFlight]:
+    """
+    Parse King Fahd International Airport (Dammam) departure board.
+    kfia.gov.sa — may not have a dedicated departures page, best-effort.
+    """
+    source = AIRPORT_SOURCES["DMM"]
+
+    flights = _parse_html_table(
+        html, "DMM", source["url"],
+        flight_col=0, airline_col=1, dest_col=2, time_col=3, status_col=4,
+    )
+
+    if not flights:
+        flights = _parse_html_divs(
+            html, "DMM", source["url"],
+            container_selector=".flight-row, .flight-item, [class*='flight'], [class*='departure']",
+        )
+
+    if not flights:
+        flights = _broad_parse(html, "DMM", source["url"])
+
+    return flights
+
+
+def _parse_sharjah(html: str) -> list[ScrapedFlight]:
+    """
+    Parse Sharjah International Airport departure board.
+    sharjahairport.ae — has a dedicated passenger departures page.
+    """
+    source = AIRPORT_SOURCES["SHJ"]
+
+    flights = _parse_html_table(
+        html, "SHJ", source["url"],
+        flight_col=0, airline_col=1, dest_col=2, time_col=3, status_col=4,
+    )
+
+    if not flights:
+        flights = _parse_html_divs(
+            html, "SHJ", source["url"],
+            container_selector=".flight-row, .flight-item, [class*='flight'], [class*='departure']",
+        )
+
+    if not flights:
+        flights = _broad_parse(html, "SHJ", source["url"])
+
+    return flights
+
+
 # ---------------------------------------------------------------------------
 # Broad fallback parser — tries to find any flight-like data in the HTML
 # ---------------------------------------------------------------------------
@@ -566,6 +711,11 @@ _PARSERS = {
     "_parse_kuwait": _parse_kuwait,
     "_parse_doha": _parse_doha,
     "_parse_dubai": _parse_dubai,
+    "_parse_abudhabi": _parse_abudhabi,
+    "_parse_riyadh": _parse_riyadh,
+    "_parse_jeddah": _parse_jeddah,
+    "_parse_dammam": _parse_dammam,
+    "_parse_sharjah": _parse_sharjah,
 }
 
 
