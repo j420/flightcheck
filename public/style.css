@@ -173,6 +173,36 @@ body {
     color: var(--warning);
 }
 
+/* ---- Operational status banners ---- */
+
+.ops-banner {
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    justify-content: center;
+    text-align: center;
+}
+
+.ops-banner-open {
+    background: var(--success-bg);
+    border-bottom: 1px solid rgba(26,153,96,0.2);
+    color: var(--success);
+}
+
+.ops-banner-open svg {
+    flex-shrink: 0;
+    color: var(--success);
+}
+
+.ops-banner-closed {
+    background: var(--danger-bg);
+    border-bottom: 1px solid rgba(217,64,64,0.2);
+    color: var(--danger);
+}
+
 /* ---- Main ---- */
 
 main {
@@ -949,6 +979,11 @@ footer p + p {
     .alert-strip {
         font-size: 0.7rem;
         padding: 0.35rem 0.75rem;
+    }
+
+    .ops-banner {
+        font-size: 0.72rem;
+        padding: 0.4rem 0.75rem;
     }
 
     main {
