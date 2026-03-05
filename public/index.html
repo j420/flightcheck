@@ -154,7 +154,7 @@
                     <svg viewBox="0 0 20 20" fill="currentColor" width="20" height="20"><path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
                     <div>
                         <h2>Airport Direct Status</h2>
-                        <p class="airport-direct-subtitle">Scraped from official airport departure boards — cross-verified with FR24</p>
+                        <p class="airport-direct-subtitle">AeroDataBox FIDS data — cross-verified with FR24</p>
                     </div>
                 </div>
                 <div class="airport-direct-controls">
@@ -1113,23 +1113,46 @@
 
         checkVerificationStatus();
 
-        // ---- Airport Direct: official airport website scraping ----
+        // ---- Airport Direct: AeroDataBox FIDS data ----
 
         const SCRAPER_AIRPORTS = ['DXB', 'AUH', 'DOH', 'RUH', 'JED', 'KWI', 'MCT', 'BAH', 'DMM', 'SHJ', 'SLL'];
         let scrapeData = null;
         let scrapeRefreshTimer = null;
+        let aerodataboxConfigured = null; // null = unknown, true/false
         const SCRAPE_REFRESH_MS = 300000; // 5 minutes
+
+        async function checkAerodataboxStatus() {
+            try {
+                const resp = await fetch(`${API_BASE}/airport-status/config`);
+                const data = await safeJson(resp);
+                aerodataboxConfigured = data.configured === true;
+            } catch (e) {
+                aerodataboxConfigured = false;
+            }
+        }
 
         async function scrapeAllAirports() {
             const section = document.getElementById('airport-direct-section');
             section.classList.remove('hidden');
 
+            // Check config status first time
+            if (aerodataboxConfigured === null) {
+                await checkAerodataboxStatus();
+            }
+
+            if (aerodataboxConfigured === false) {
+                const container = document.getElementById('scraped-flights-container');
+                container.innerHTML = '<div class="no-flights"><p>AeroDataBox API not configured.</p><p class="no-flights-hint">Set AERODATABOX_API_KEY in environment to enable cross-verification with a secondary flight data source.</p></div>';
+                document.getElementById('scrape-status').textContent = 'Not configured';
+                return;
+            }
+
             const btn = document.getElementById('btn-scrape-all');
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span> Scraping airports...';
+            btn.innerHTML = '<span class="spinner"></span> Fetching airport data...';
 
             const statusEl = document.getElementById('scrape-status');
-            statusEl.textContent = 'Fetching from airport websites...';
+            statusEl.textContent = 'Fetching from AeroDataBox FIDS...';
 
             try {
                 const resp = await fetchWithRetry(`${API_BASE}/airport-status/scan`);
@@ -1240,7 +1263,7 @@
                     empty.className = 'no-flights';
                     empty.innerHTML = data.error
                         ? `<p>${esc(data.error)}</p>`
-                        : '<p>No flights found on airport website.</p><p class="no-flights-hint">Site may load data via JavaScript (not scrapable server-side).</p>';
+                        : '<p>No departure data available.</p><p class="no-flights-hint">Data may be temporarily unavailable from AeroDataBox.</p>';
                     card.appendChild(empty);
                 } else {
                     const tableWrap = document.createElement('div');
