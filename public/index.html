@@ -167,6 +167,9 @@
 
         <div id="error-banner" class="error-banner hidden"></div>
 
+        <!-- Departed flights summary banner (major airports only) -->
+        <div id="departed-summary" class="departed-summary hidden"></div>
+
         <!-- Results -->
         <section id="results">
             <div id="flights-container"></div>
@@ -607,6 +610,33 @@
             });
         }
 
+        // Major airports shown in the departed summary banner
+        const DEPARTED_BANNER_AIRPORTS = ['DXB', 'DOH', 'AUH', 'RUH', 'JED', 'KWI'];
+
+        function updateDepartedSummary() {
+            const el = document.getElementById('departed-summary');
+            if (!lastData) { el.classList.add('hidden'); return; }
+
+            const items = [];
+            for (const iata of DEPARTED_BANNER_AIRPORTS) {
+                const info = lastData[iata];
+                if (!info) continue;
+                const count = info.departed_today || 0;
+                items.push({ iata, count });
+            }
+
+            if (items.length === 0) { el.classList.add('hidden'); return; }
+
+            el.innerHTML = items.map(({ iata, count }) => {
+                const cls = count > 0 ? 'dep-chip dep-chip-active' : 'dep-chip dep-chip-zero';
+                const icon = count > 0
+                    ? '<svg viewBox="0 0 20 20" fill="currentColor" width="12" height="12"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>'
+                    : '<svg viewBox="0 0 20 20" fill="currentColor" width="12" height="12"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>';
+                return `<span class="${cls}">${icon} <strong>${iata}</strong> ${count} departed</span>`;
+            }).join('');
+            el.classList.remove('hidden');
+        }
+
         function applyFiltersAndRender() {
             if (!lastData) return;
             const filtered = {};
@@ -628,6 +658,7 @@
             const airportNames = Object.keys(filtered).join(', ');
             showStatus(`${airportNames}`, totalCount);
             renderFlights(filtered);
+            updateDepartedSummary();
         }
 
         // ---- Google Flights protobuf URL builder ----

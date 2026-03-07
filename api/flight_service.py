@@ -178,15 +178,23 @@ class FlightService:
         evac_flights = []
         departed_count = 0
 
+        # Statuses that confirm the flight has left the airport
+        DEPARTED_STATUSES = {"departed", "landed"}
+
         for flight_data in all_flights:
-            # Count departed flights before filtering them out
+            # Count departed/landed flights before filtering them out
             flight_info = flight_data.get("flight") or {}
             status_data = flight_info.get("status") or {}
             status_text = (status_data.get("text") or "").lower().strip()
             if not status_text:
                 generic = (status_data.get("generic") or {}).get("status") or {}
                 status_text = (generic.get("text") or "").lower().strip()
-            if status_text == "departed":
+            # Also check the generic status type — FR24 sometimes puts
+            # "Estimated 14:30" in text but "departure" in generic.type
+            generic_status = (status_data.get("generic") or {}).get("status") or {}
+            generic_text = (generic_status.get("text") or "").lower().strip()
+
+            if status_text in DEPARTED_STATUSES or generic_text in DEPARTED_STATUSES:
                 departed_count += 1
 
             evac = self._process_flight(flight_data, airport_iata, airport_info, airlines_map)
