@@ -33,10 +33,26 @@ VIABLE_STATUSES = {"scheduled", "estimated", "delayed"}
 EXCLUDED_STATUSES = {"canceled", "cancelled", "diverted", "landed", "departed"}
 
 # Statuses that confirm a flight successfully left the airport
-DEPARTED_STATUSES = {"departed", "landed"}
+# (first-word match after lowercasing, e.g. "Departed 14:30" → "departed")
+DEPARTED_STATUSES = {"departed", "landed", "airborne", "en"}  # "en" catches "En Route"
+
+# Generic status types that mean departed (FR24 generic.status.type field)
+DEPARTED_TYPES = {"departure"}
 
 # How far back to count departed flights (seconds)
 DEPARTED_WINDOW_SECONDS = 12 * 3600  # 12 hours
+
+
+# IATA → ICAO airline code mapping (fallback when FR24 only provides IATA)
+_IATA_TO_ICAO = {
+    "EK": "UAE", "QR": "QTR", "EY": "ETD", "SV": "SVA", "GF": "GFA",
+    "KU": "KAC", "WY": "OMA", "FZ": "FDB", "G9": "ABY", "XY": "NAS",
+    "TK": "THY", "BA": "BAW", "LH": "DLH", "AF": "AFR", "KL": "KLM",
+    "SQ": "SIA", "CX": "CPA", "DL": "DAL", "AA": "AAL", "UA": "UAL",
+    "AI": "AIC", "6E": "IGO", "PR": "PAL", "MH": "MAS", "PK": "PIA",
+    "MS": "EGF", "RJ": "RJA", "ME": "MEA", "ET": "ETH", "KQ": "KQA",
+    "LX": "SWR", "OS": "AUA", "TP": "TAP", "W6": "WIZ",
+}
 
 
 def _normalize_status(status_data: dict) -> str:
@@ -207,23 +223,45 @@ class FlightService:
         for flight_data in all_flights:
             flight_info = flight_data.get("flight") or {}
 
-            # Count departed flights using TWO signals:
-            # 1. Status text says "departed" or "landed"
-            # 2. Scheduled departure time is in the past (more reliable)
+            # Count departed flights using MULTIPLE signals from FR24:
             status_data = flight_info.get("status") or {}
             status_word = _normalize_status(status_data)
 
+            # Signal 1: FR24 "live" field — true when aircraft is tracked in-air
+            is_live = bool(status_data.get("live"))
+
+            # Signal 2: Generic status type (more reliable than text)
+            generic = (status_data.get("generic") or {}).get("status") or {}
+            generic_type = (generic.get("type") or "").lower()
+            generic_text = (generic.get("text") or "").lower()
+
+            # Signal 3: Departure timestamps
             time_info = flight_info.get("time") or {}
             dep_scheduled = ((time_info.get("scheduled") or {}).get("departure")) or 0
             dep_estimated = ((time_info.get("estimated") or {}).get("departure")) or 0
+            dep_actual = ((time_info.get("real") or {}).get("departure")) or 0
             dep_time = dep_estimated or dep_scheduled
 
-            # A flight counts as departed if:
-            # - Status explicitly says departed/landed, OR
-            # - Its departure time is in the past (within 12h window)
+            # A flight counts as departed if ANY of these are true:
+            flight_departed = False
+
+            # 1. Status text says departed/landed/airborne
             if status_word in DEPARTED_STATUSES:
-                departed_count += 1
-            elif dep_time and cutoff_ts <= dep_time < now_ts:
+                flight_departed = True
+            # 2. Generic status text says departed/landed
+            elif generic_text in {"departed", "landed", "airborne", "en route"}:
+                flight_departed = True
+            # 3. Live tracking is active (aircraft in air)
+            elif is_live:
+                flight_departed = True
+            # 4. Has an actual departure time recorded
+            elif dep_actual and dep_actual > 0:
+                flight_departed = True
+            # 5. Departure time is in the past (within window)
+            elif isinstance(dep_time, (int, float)) and dep_time > 0 and cutoff_ts <= dep_time < now_ts:
+                flight_departed = True
+
+            if flight_departed:
                 departed_count += 1
 
             evac = self._process_flight(flight_data, airport_iata, airport_info, airlines_map)
@@ -324,11 +362,28 @@ class FlightService:
             if not callsign:
                 callsign = identification.get("callsign") or "N/A"
 
-            # Extract airline
+            # Extract airline — try ICAO first, fall back to IATA→ICAO mapping,
+            # then try deriving from the flight number prefix (e.g. "EK202" → "EK" → "UAE")
             airline_info = flight_info.get("airline") or {}
             airline_code = airline_info.get("code") or {}
             airline_icao = airline_code.get("icao") or ""
+            airline_iata = airline_code.get("iata") or ""
             airline_name = airline_info.get("name") or ""
+
+            # Fallback: use IATA→ICAO mapping if ICAO is missing
+            if not airline_icao and airline_iata:
+                airline_icao = _IATA_TO_ICAO.get(airline_iata.upper(), "")
+
+            # Fallback: derive from flight number prefix (e.g. "EK202" → "EK")
+            if not airline_icao and callsign:
+                prefix = ""
+                for ch in callsign:
+                    if ch.isdigit():
+                        break
+                    prefix += ch
+                if prefix:
+                    airline_icao = _IATA_TO_ICAO.get(prefix.upper(), "")
+
             if not airline_name and airline_icao:
                 airline_name = airlines_map.get(airline_icao, "Unknown Airline")
 
