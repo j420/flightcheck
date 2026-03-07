@@ -610,8 +610,8 @@
             });
         }
 
-        // Major airports shown in the departed summary banner
-        const DEPARTED_BANNER_AIRPORTS = ['DXB', 'DOH', 'AUH', 'RUH', 'JED', 'KWI'];
+        // Show departed counts for all major hub airports
+        const DEPARTED_BANNER_AIRPORTS = MAJOR_AIRPORTS;
 
         function updateDepartedSummary() {
             const el = document.getElementById('departed-summary');
