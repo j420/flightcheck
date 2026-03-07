@@ -88,6 +88,7 @@ def api_scan():
             "airport_name": GCC_AIRPORTS[airport]["name"],
             "city": GCC_AIRPORTS[airport]["city"],
             "count": len(flights),
+            "departed_today": flight_service.get_departed_count(airport),
             "flights": [f.to_dict() for f in flights],
         }
     return jsonify({"fetched_at": _utc_now(), "airports": output})

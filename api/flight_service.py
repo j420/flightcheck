@@ -35,6 +35,9 @@ EXCLUDED_STATUSES = {"canceled", "cancelled", "diverted", "landed", "departed"}
 # Statuses that confirm a flight successfully left the airport
 DEPARTED_STATUSES = {"departed", "landed"}
 
+# How far back to count departed flights (seconds)
+DEPARTED_WINDOW_SECONDS = 12 * 3600  # 12 hours
+
 
 def _normalize_status(status_data: dict) -> str:
     """Extract the base status word from FR24 status data.
@@ -198,14 +201,29 @@ class FlightService:
         airlines_map = self.get_airlines_map()
         evac_flights = []
         departed_count = 0
+        now_ts = time.time()
+        cutoff_ts = now_ts - DEPARTED_WINDOW_SECONDS
 
         for flight_data in all_flights:
-            # Count departed/landed flights before filtering them out
             flight_info = flight_data.get("flight") or {}
+
+            # Count departed flights using TWO signals:
+            # 1. Status text says "departed" or "landed"
+            # 2. Scheduled departure time is in the past (more reliable)
             status_data = flight_info.get("status") or {}
             status_word = _normalize_status(status_data)
 
+            time_info = flight_info.get("time") or {}
+            dep_scheduled = ((time_info.get("scheduled") or {}).get("departure")) or 0
+            dep_estimated = ((time_info.get("estimated") or {}).get("departure")) or 0
+            dep_time = dep_estimated or dep_scheduled
+
+            # A flight counts as departed if:
+            # - Status explicitly says departed/landed, OR
+            # - Its departure time is in the past (within 12h window)
             if status_word in DEPARTED_STATUSES:
+                departed_count += 1
+            elif dep_time and cutoff_ts <= dep_time < now_ts:
                 departed_count += 1
 
             evac = self._process_flight(flight_data, airport_iata, airport_info, airlines_map)
@@ -214,8 +232,17 @@ class FlightService:
 
         evac_flights.sort(key=lambda f: f.scheduled_departure)
 
+        # Use schedule_total as a floor for departed count at busy airports
+        # (FR24 only returns ~200 flights but schedule_total reflects all)
+        if schedule_total > len(all_flights) and departed_count > 0:
+            # Estimate: proportion of departed in fetched data × total scheduled
+            ratio = departed_count / max(len(all_flights), 1)
+            estimated_total_departed = int(schedule_total * ratio)
+            if estimated_total_departed > departed_count:
+                departed_count = estimated_total_departed
+
         logger.info(
-            f"{airport_iata}: {departed_count} departed/landed out of "
+            f"{airport_iata}: {departed_count} departed out of "
             f"{len(all_flights)} fetched, schedule_total={schedule_total}"
         )
 

@@ -1,34 +1,37 @@
 /* ============================================================
-   GCC Flight Tracker — Classic Design System
+   GCC Flight Tracker — Dark Aviation Command Center
    ============================================================ */
 
 :root {
-    --bg:          #f8f9fb;
-    --surface:     #ffffff;
-    --surface-alt: #f1f3f7;
-    --border:      #e2e5ec;
-    --border-focus:#2563eb;
-    --text:        #111827;
-    --text-2:      #4b5563;
-    --text-3:      #9ca3af;
-    --accent:      #2563eb;
-    --accent-dark: #1d4ed8;
-    --accent-bg:   rgba(37,99,235,0.06);
-    --danger:      #dc2626;
-    --danger-bg:   rgba(220,38,38,0.06);
-    --warning:     #b45309;
-    --warning-bg:  rgba(180,83,9,0.06);
-    --success:     #059669;
-    --success-bg:  rgba(5,150,105,0.06);
-    --radius:      12px;
-    --radius-sm:   8px;
-    --shadow-sm:   0 1px 2px rgba(0,0,0,0.04);
-    --shadow:      0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-    --shadow-md:   0 4px 12px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04);
-    --shadow-lg:   0 8px 24px rgba(0,0,0,0.1), 0 2px 6px rgba(0,0,0,0.04);
+    --bg:          #0c1220;
+    --surface:     #131d2e;
+    --surface-alt: #182438;
+    --border:      #1e3050;
+    --border-focus:#38bdf8;
+    --text:        #e8edf5;
+    --text-2:      #94a3b8;
+    --text-3:      #64748b;
+    --accent:      #38bdf8;
+    --accent-dark: #0ea5e9;
+    --accent-bg:   rgba(56,189,248,0.08);
+    --danger:      #f87171;
+    --danger-bg:   rgba(248,113,113,0.1);
+    --warning:     #fbbf24;
+    --warning-bg:  rgba(251,191,36,0.1);
+    --success:     #34d399;
+    --success-bg:  rgba(52,211,153,0.1);
+    --radius:      10px;
+    --radius-sm:   6px;
+    --shadow-sm:   0 1px 3px rgba(0,0,0,0.3);
+    --shadow:      0 2px 6px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.2);
+    --shadow-md:   0 4px 14px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.2);
+    --shadow-lg:   0 8px 28px rgba(0,0,0,0.45), 0 4px 8px rgba(0,0,0,0.2);
     --transition:  180ms ease;
     --font-sans:   'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     --font-mono:   'JetBrains Mono', 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    --glow-accent: 0 0 20px rgba(56,189,248,0.15);
+    --glow-danger: 0 0 20px rgba(248,113,113,0.15);
+    --glow-success:0 0 20px rgba(52,211,153,0.15);
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -52,9 +55,9 @@ body {
     position: sticky;
     top: 0;
     z-index: 50;
-    box-shadow: 0 1px 8px rgba(0,0,0,0.06);
-    backdrop-filter: blur(8px);
-    background: rgba(255,255,255,0.95);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+    backdrop-filter: blur(12px);
+    background: rgba(19,29,46,0.95);
 }
 
 .topbar-inner {
@@ -97,7 +100,7 @@ body {
 .brand-region {
     font-size: 0.6rem;
     font-weight: 700;
-    background: var(--danger);
+    background: linear-gradient(135deg, #f87171, #ef4444);
     color: white;
     padding: 0.15rem 0.4rem;
     border-radius: 4px;
@@ -105,6 +108,13 @@ body {
     vertical-align: middle;
     letter-spacing: 0.06em;
     text-transform: uppercase;
+    box-shadow: 0 0 8px rgba(248,113,113,0.3);
+    animation: urgentPulse 3s ease-in-out infinite;
+}
+
+@keyframes urgentPulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(248,113,113,0.3); }
+    50% { box-shadow: 0 0 16px rgba(248,113,113,0.5); }
 }
 
 .topbar-right {
@@ -128,18 +138,21 @@ body {
 }
 
 .pill-live {
-    background: var(--success-bg);
+    background: rgba(52,211,153,0.15);
     color: var(--success);
+    border: 1px solid rgba(52,211,153,0.2);
 }
 
 .pill-offline {
-    background: var(--danger-bg);
+    background: rgba(248,113,113,0.15);
     color: var(--danger);
+    border: 1px solid rgba(248,113,113,0.2);
 }
 
 .pill-muted {
     background: var(--surface-alt);
     color: var(--text-2);
+    border: 1px solid var(--border);
 }
 
 .live-dot {
@@ -147,11 +160,13 @@ body {
     height: 6px;
     border-radius: 50%;
     background: var(--success);
+    box-shadow: 0 0 6px var(--success);
     animation: pulse 2s ease-in-out infinite;
 }
 
 .pill-offline .live-dot {
     background: var(--danger);
+    box-shadow: 0 0 6px var(--danger);
 }
 
 @keyframes pulse {
@@ -164,8 +179,8 @@ body {
 /* ---- Alert strip ---- */
 
 .alert-strip {
-    background: linear-gradient(to right, rgba(180,83,9,0.05), rgba(180,83,9,0.08), rgba(180,83,9,0.05));
-    border-bottom: 1px solid rgba(180,83,9,0.12);
+    background: linear-gradient(to right, rgba(251,191,36,0.05), rgba(251,191,36,0.1), rgba(251,191,36,0.05));
+    border-bottom: 1px solid rgba(251,191,36,0.15);
     color: var(--warning);
     padding: 0.5rem 1rem;
     font-size: 0.78rem;
@@ -196,8 +211,8 @@ body {
 }
 
 .ops-banner-open {
-    background: linear-gradient(to right, rgba(5,150,105,0.04), rgba(5,150,105,0.07), rgba(5,150,105,0.04));
-    border-bottom: 1px solid rgba(5,150,105,0.12);
+    background: linear-gradient(to right, rgba(52,211,153,0.04), rgba(52,211,153,0.08), rgba(52,211,153,0.04));
+    border-bottom: 1px solid rgba(52,211,153,0.15);
     color: var(--success);
 }
 
@@ -207,8 +222,8 @@ body {
 }
 
 .ops-banner-closed {
-    background: linear-gradient(to right, rgba(220,38,38,0.04), rgba(220,38,38,0.07), rgba(220,38,38,0.04));
-    border-bottom: 1px solid rgba(220,38,38,0.12);
+    background: linear-gradient(to right, rgba(248,113,113,0.04), rgba(248,113,113,0.08), rgba(248,113,113,0.04));
+    border-bottom: 1px solid rgba(248,113,113,0.15);
     color: var(--danger);
 }
 
@@ -229,6 +244,7 @@ main {
     overflow: hidden;
     box-shadow: var(--shadow);
     margin-bottom: 1rem;
+    background: linear-gradient(180deg, var(--surface), rgba(19,29,46,0.95));
 }
 
 .search-tabs {
@@ -258,13 +274,14 @@ main {
 
 .tab:hover {
     color: var(--text-2);
-    background: rgba(0,0,0,0.015);
+    background: rgba(255,255,255,0.03);
 }
 
 .tab.active {
     color: var(--accent);
     border-bottom-color: var(--accent);
     background: var(--surface);
+    text-shadow: 0 0 10px rgba(56,189,248,0.3);
 }
 
 .tab svg {
@@ -309,7 +326,7 @@ main {
 
 .input-field:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+    box-shadow: 0 0 0 3px rgba(56,189,248,0.15), var(--glow-accent);
 }
 
 .input-field::placeholder {
@@ -338,25 +355,25 @@ main {
 }
 
 .btn-primary {
-    background: var(--accent);
-    box-shadow: 0 1px 2px rgba(37,99,235,0.2);
+    background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+    box-shadow: 0 2px 8px rgba(56,189,248,0.25);
 }
 
 .btn-primary:hover:not(:disabled) {
-    background: var(--accent-dark);
-    box-shadow: 0 2px 4px rgba(37,99,235,0.25);
-    transform: translateY(-0.5px);
+    background: linear-gradient(135deg, #0ea5e9, #0284c7);
+    box-shadow: 0 4px 16px rgba(56,189,248,0.35);
+    transform: translateY(-1px);
 }
 
 .btn-danger {
-    background: var(--danger);
-    box-shadow: 0 1px 2px rgba(220,38,38,0.2);
+    background: linear-gradient(135deg, #f87171, #ef4444);
+    box-shadow: 0 2px 8px rgba(248,113,113,0.25);
 }
 
 .btn-danger:hover:not(:disabled) {
-    background: #b91c1c;
-    box-shadow: 0 2px 4px rgba(220,38,38,0.25);
-    transform: translateY(-0.5px);
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    box-shadow: 0 4px 16px rgba(248,113,113,0.35);
+    transform: translateY(-1px);
 }
 
 .btn-primary:disabled,
@@ -377,7 +394,7 @@ main {
     display: inline-block;
     width: 14px;
     height: 14px;
-    border: 2px solid rgba(255,255,255,0.3);
+    border: 2px solid rgba(255,255,255,0.2);
     border-top-color: white;
     border-radius: 50%;
     animation: spin 0.6s linear infinite;
@@ -423,9 +440,9 @@ main {
 
 .btn-suggestion:hover {
     background: var(--accent);
-    color: white;
+    color: #0c1220;
     border-color: var(--accent);
-    box-shadow: 0 1px 3px rgba(37,99,235,0.2);
+    box-shadow: 0 2px 8px rgba(56,189,248,0.25);
 }
 
 .suggestion-feedback {
@@ -476,18 +493,18 @@ main {
 
 .status-pill:hover {
     border-color: var(--accent);
-    color: var(--text-2);
+    color: var(--accent);
     background: var(--accent-bg);
 }
 
 .status-pill.active {
-    background: var(--accent-bg);
+    background: rgba(56,189,248,0.12);
     border-color: var(--accent);
-    color: var(--accent-dark);
+    color: var(--accent);
 }
 
 .status-pill.active[data-status="delayed"] {
-    background: var(--warning-bg);
+    background: rgba(251,191,36,0.12);
     border-color: var(--warning);
     color: var(--warning);
 }
@@ -558,8 +575,8 @@ main {
 /* ---- Error banner ---- */
 
 .error-banner {
-    background: var(--danger-bg);
-    border: 1.5px solid rgba(220,38,38,0.15);
+    background: rgba(248,113,113,0.1);
+    border: 1.5px solid rgba(248,113,113,0.2);
     color: var(--danger);
     padding: 0.65rem 1rem;
     border-radius: var(--radius-sm);
@@ -583,7 +600,8 @@ main {
 }
 
 .airport-card:hover {
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--shadow-md), var(--glow-accent);
+    border-color: rgba(56,189,248,0.2);
 }
 
 .airport-card-header {
@@ -645,13 +663,15 @@ main {
 }
 
 .departed-active {
-    color: #15803d;
-    background: #dcfce7;
+    color: var(--success);
+    background: rgba(52,211,153,0.12);
+    border: 1px solid rgba(52,211,153,0.2);
 }
 
 .departed-none {
-    color: #b45309;
-    background: #fef3c7;
+    color: var(--warning);
+    background: rgba(251,191,36,0.12);
+    border: 1px solid rgba(251,191,36,0.2);
 }
 
 /* ---- Departed summary banner ---- */
@@ -661,9 +681,11 @@ main {
     flex-wrap: wrap;
     justify-content: center;
     gap: 0.5rem;
-    padding: 0.6rem 1rem;
-    background: linear-gradient(to right, rgba(5,150,105,0.03), rgba(5,150,105,0.06), rgba(5,150,105,0.03));
-    border-bottom: 1px solid rgba(5,150,105,0.1);
+    padding: 0.65rem 1rem;
+    background: linear-gradient(to right, rgba(52,211,153,0.03), rgba(52,211,153,0.08), rgba(52,211,153,0.03));
+    border: 1px solid rgba(52,211,153,0.12);
+    border-radius: var(--radius-sm);
+    margin-bottom: 0.75rem;
 }
 
 .dep-chip {
@@ -677,19 +699,36 @@ main {
     white-space: nowrap;
 }
 
+.dep-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--text-2);
+    margin-right: 0.25rem;
+    white-space: nowrap;
+}
+
+.dep-label svg {
+    color: var(--accent);
+}
+
 .dep-chip strong {
     font-weight: 700;
     letter-spacing: 0.02em;
 }
 
 .dep-chip-active {
-    color: #15803d;
-    background: #dcfce7;
+    color: var(--success);
+    background: rgba(52,211,153,0.12);
+    border: 1px solid rgba(52,211,153,0.2);
 }
 
 .dep-chip-zero {
-    color: #92400e;
-    background: #fef3c7;
+    color: var(--warning);
+    background: rgba(251,191,36,0.1);
+    border: 1px solid rgba(251,191,36,0.15);
 }
 
 /* ---- Table ---- */
@@ -713,8 +752,8 @@ thead th {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--text-3);
-    background: var(--surface);
+    color: var(--accent);
+    background: rgba(56,189,248,0.04);
     border-bottom: 2px solid var(--border);
     white-space: nowrap;
     vertical-align: top;
@@ -741,7 +780,7 @@ thead th {
 
 .col-filter:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(37,99,235,0.1);
+    box-shadow: 0 0 0 2px rgba(56,189,248,0.15);
 }
 
 .col-filter::placeholder {
@@ -754,7 +793,7 @@ tbody tr {
 }
 
 tbody tr:hover {
-    background: rgba(37,99,235,0.02);
+    background: rgba(56,189,248,0.04);
 }
 
 tbody tr:last-child {
@@ -825,38 +864,38 @@ tbody td {
 }
 
 .status-scheduled {
-    background: rgba(37,99,235,0.08);
-    color: #2563eb;
+    background: rgba(56,189,248,0.12);
+    color: var(--accent);
 }
 
 .status-estimated {
-    background: rgba(5,150,105,0.08);
-    color: #059669;
+    background: rgba(52,211,153,0.12);
+    color: var(--success);
 }
 
 .status-delayed {
-    background: rgba(180,83,9,0.08);
-    color: #b45309;
+    background: rgba(251,191,36,0.12);
+    color: var(--warning);
 }
 
 .status-unknown {
-    background: var(--surface-alt);
+    background: rgba(100,116,139,0.12);
     color: var(--text-3);
 }
 
 .status-cancelled {
-    background: var(--danger-bg);
+    background: rgba(248,113,113,0.12);
     color: var(--danger);
     text-decoration: line-through;
 }
 
 .flight-cancelled {
     opacity: 0.5;
-    background: rgba(220,38,38,0.02);
+    background: rgba(248,113,113,0.03);
 }
 
 .flight-cancelled:hover {
-    background: rgba(220,38,38,0.04);
+    background: rgba(248,113,113,0.06);
 }
 
 .verified-tag {
@@ -887,19 +926,20 @@ tbody td {
 }
 
 .avail-verify {
-    background: var(--warning-bg);
+    background: rgba(251,191,36,0.12);
     color: var(--warning);
     text-decoration: none;
     cursor: pointer;
     transition: background var(--transition);
+    border: 1px solid rgba(251,191,36,0.15);
 }
 
 .avail-verify:hover {
-    background: rgba(180,83,9,0.12);
+    background: rgba(251,191,36,0.2);
 }
 
 .avail-checking {
-    background: var(--accent-bg);
+    background: rgba(56,189,248,0.12);
     color: var(--accent);
     animation: pulse 1.5s infinite;
 }
@@ -937,14 +977,14 @@ tbody td {
     transform: translateY(-0.5px);
 }
 
-.btn-kayak   { background: #ff6d00; }
-.btn-kayak:hover   { background: #ff8533; box-shadow: 0 2px 4px rgba(255,109,0,0.3); }
+.btn-kayak   { background: linear-gradient(135deg, #ff6d00, #e65100); }
+.btn-kayak:hover   { background: linear-gradient(135deg, #ff8533, #ff6d00); box-shadow: 0 2px 8px rgba(255,109,0,0.3); }
 
-.btn-sky     { background: #0770e3; }
-.btn-sky:hover     { background: #388ae8; box-shadow: 0 2px 4px rgba(7,112,227,0.3); }
+.btn-sky     { background: linear-gradient(135deg, #0ea5e9, #0770e3); }
+.btn-sky:hover     { background: linear-gradient(135deg, #38bdf8, #0ea5e9); box-shadow: 0 2px 8px rgba(14,165,233,0.3); }
 
-.btn-airline { background: #6b7280; }
-.btn-airline:hover { background: #4b5563; box-shadow: 0 2px 4px rgba(107,114,128,0.3); }
+.btn-airline { background: linear-gradient(135deg, #64748b, #475569); }
+.btn-airline:hover { background: linear-gradient(135deg, #94a3b8, #64748b); box-shadow: 0 2px 8px rgba(100,116,139,0.3); }
 
 /* ---- Pagination ---- */
 
@@ -1014,6 +1054,7 @@ footer {
     border-top: 1px solid var(--border);
     margin-top: 2.5rem;
     font-weight: 450;
+    background: rgba(12,18,32,0.6);
 }
 
 footer p + p {

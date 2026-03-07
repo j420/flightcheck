@@ -20,7 +20,7 @@
         <div class="topbar-inner">
             <div class="brand">
                 <a href="/" class="brand-link">
-                    <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                    <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 00-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>
                     <div>
                         <span class="brand-title">FlightTracker</span>
                         <span class="brand-region">GCC</span>
@@ -165,10 +165,10 @@
             </div>
         </section>
 
-        <div id="error-banner" class="error-banner hidden"></div>
-
         <!-- Departed flights summary banner (major airports only) -->
         <div id="departed-summary" class="departed-summary hidden"></div>
+
+        <div id="error-banner" class="error-banner hidden"></div>
 
         <!-- Results -->
         <section id="results">
@@ -559,6 +559,7 @@
                             airport_name: info.airport_name,
                             city: info.city,
                             flights: info.flights,
+                            departed_today: info.departed_today || 0,
                         };
                         currentPage[airport] = 1;
                     }
@@ -627,13 +628,15 @@
 
             if (items.length === 0) { el.classList.add('hidden'); return; }
 
-            el.innerHTML = items.map(({ iata, count }) => {
+            const totalDeparted = items.reduce((s, i) => s + i.count, 0);
+            const activeCount = items.filter(i => i.count > 0).length;
+            const label = `<span class="dep-label"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"/></svg> Departures (12h):</span>`;
+            const chips = items.map(({ iata, count }) => {
                 const cls = count > 0 ? 'dep-chip dep-chip-active' : 'dep-chip dep-chip-zero';
-                const icon = count > 0
-                    ? '<svg viewBox="0 0 20 20" fill="currentColor" width="12" height="12"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>'
-                    : '<svg viewBox="0 0 20 20" fill="currentColor" width="12" height="12"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>';
-                return `<span class="${cls}">${icon} <strong>${iata}</strong> ${count} departed</span>`;
+                return `<span class="${cls}"><strong>${iata}</strong> ${count}</span>`;
             }).join('');
+
+            el.innerHTML = label + chips;
             el.classList.remove('hidden');
         }
 
@@ -680,10 +683,17 @@
             return [..._pbTag(field, 0), ..._pbVarint(val)];
         }
 
-        function buildGoogleFlightsUrl(originIata, destIata, dateStr) {
+        function buildGoogleFlightsUrl(originIata, destIata, dateStr, airlineIcao) {
             const orig = [..._pbInt(1, 1), ..._pbStr(2, originIata)];
             const dest = [..._pbInt(1, 1), ..._pbStr(2, destIata)];
-            const slice = [..._pbStr(2, dateStr), ..._pbMsg(13, orig), ..._pbMsg(14, dest)];
+            // Add airline filter if we have an IATA code
+            const airlineIata = airlineIcao ? ICAO_TO_IATA[airlineIcao.toUpperCase()] : null;
+            const slice = [
+                ..._pbStr(2, dateStr),
+                ...(airlineIata ? _pbStr(6, airlineIata) : []),
+                ..._pbMsg(13, orig),
+                ..._pbMsg(14, dest),
+            ];
             const root = _pbMsg(3, slice);
             const b64 = btoa(String.fromCharCode(...root))
                 .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -697,10 +707,19 @@
         // Date helper: '2026-03-15' → '20260315'
         function _dateCompact(d) { return d.replace(/-/g, ''); }
 
+        // ICAO → IATA airline code mapping (for Google Flights airline filter)
+        const ICAO_TO_IATA = {
+            UAE:'EK',QTR:'QR',ETD:'EY',SVA:'SV',GFA:'GF',KAC:'KU',OMA:'WY',
+            FDB:'FZ',ABY:'G9',NAS:'XY',THY:'TK',BAW:'BA',DLH:'LH',AFR:'AF',
+            KLM:'KL',SIA:'SQ',CPA:'CX',DAL:'DL',AAL:'AA',UAL:'UA',AIC:'AI',
+            IGO:'6E',PAL:'PR',MAS:'MH',PIA:'PK',EGF:'MS',RJA:'RJ',MEA:'ME',
+            ETH:'ET',KQA:'KQ',SWR:'LX',AUA:'OS',TAP:'TP',WIZ:'W6',
+        };
+
         const AIRLINE_LINKS = {
             // --- GCC major carriers (deep links with pre-filled search) ---
             QTR: (o, d, date) =>
-                `https://booking.qatarairways.com/nsp/views/deepLinkLoader.xhtml?origin=${o}&destination=${d}&departureDate=${date}&adults=1&children=0&infants=0&cabinClass=Y&tripType=O`,
+                `https://booking.qatarairways.com/nsp/views/deepLinkLoader.xhtml?widget=QR&searchType=F&addTax498=1&min498=Y&tripType=O&origin=${o}&destination=${d}&departing=${date}&adults=1&children=0&infants=0&teenager=0&Class=Y&lang=en`,
             UAE: (o, d, date) =>
                 `https://www.emirates.com/flights/search/?departureDate=${_dateCompact(date)}&returnDate=&origin=${o}&destination=${d}&adults=1&children=0&infants=0&class=Economy&tripType=OW`,
             ETD: (o, d, date) =>
@@ -758,6 +777,8 @@
             TAP: 'https://www.flytap.com/en/booking',
             WIZ: (o, d, date) =>
                 `https://wizzair.com/en-gb/booking/select-flight/${o}/${d}/${date}/null/1/0/0/null`,
+            NAS: (o, d, date) =>
+                `https://booking.flynas.com/Search?culture=en&origin=${o}&destination=${d}&departure=${date}&adults=1&children=0&infants=0`,
         };
 
         function buildAirlineUrl(airlineIcao, origin, dest, date) {
@@ -767,8 +788,10 @@
             return entry;
         }
 
-        function buildKayakUrl(origin, dest, date) {
-            return `https://www.kayak.com/flights/${origin}-${dest}/${date}?sort=bestflight_a`;
+        function buildKayakUrl(origin, dest, date, airlineIcao) {
+            const airlineIata = airlineIcao ? ICAO_TO_IATA[airlineIcao.toUpperCase()] : null;
+            const filter = airlineIata ? `&fs=airlines=${airlineIata}` : '';
+            return `https://www.kayak.com/flights/${origin}-${dest}/${date}?sort=bestflight_a${filter}`;
         }
 
         function buildSkyscannerUrl(origin, dest, date) {
@@ -778,7 +801,7 @@
 
         function getAvailabilityHtml(airport, flight) {
             const depDate = flight.scheduled_departure.split(' ')[0] || '';
-            const gfUrl = buildGoogleFlightsUrl(airport, flight.destination_iata, depDate);
+            const gfUrl = buildGoogleFlightsUrl(airport, flight.destination_iata, depDate, flight.airline_icao);
 
             if (!availabilityEnabled) {
                 return `<a href="${esc(gfUrl)}" target="_blank" rel="noopener" class="avail-badge avail-verify" title="Verify availability on Google Flights">Verify</a>`;
@@ -812,9 +835,9 @@
                 const statusClass = isCancelled ? 'status-cancelled' : getStatusClass(flight.status);
                 const statusText = isCancelled ? 'Cancelled' : flight.status;
                 const depDate = flight.scheduled_departure.split(' ')[0] || '';
-                const gfUrl = buildGoogleFlightsUrl(airport, flight.destination_iata, depDate);
+                const gfUrl = buildGoogleFlightsUrl(airport, flight.destination_iata, depDate, flight.airline_icao);
                 const airlineUrl = buildAirlineUrl(flight.airline_icao, airport, flight.destination_iata, depDate);
-                const kayakUrl = buildKayakUrl(airport, flight.destination_iata, depDate);
+                const kayakUrl = buildKayakUrl(airport, flight.destination_iata, depDate, flight.airline_icao);
                 const skyscannerUrl = buildSkyscannerUrl(airport, flight.destination_iata, depDate);
                 const row = document.createElement('tr');
                 if (isCancelled) row.classList.add('flight-cancelled');
