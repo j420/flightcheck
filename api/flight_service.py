@@ -28,8 +28,27 @@ logger = logging.getLogger(__name__)
 # "departed" is excluded because you can't book a flight that already left.
 VIABLE_STATUSES = {"scheduled", "estimated", "delayed"}
 
-# Statuses to exclude explicitly
+# Statuses to exclude explicitly (matched via startswith, since FR24
+# returns e.g. "Departed 14:30" or "Landed 16:45")
 EXCLUDED_STATUSES = {"canceled", "cancelled", "diverted", "landed", "departed"}
+
+# Statuses that confirm a flight successfully left the airport
+DEPARTED_STATUSES = {"departed", "landed"}
+
+
+def _normalize_status(status_data: dict) -> str:
+    """Extract the base status word from FR24 status data.
+
+    FR24 returns status text like "Departed 14:30", "Landed 16:45",
+    "Estimated 15:00", etc.  We only care about the first word.
+    Falls back to generic.status.text if the top-level text is empty.
+    """
+    raw = (status_data.get("text") or "").strip()
+    if not raw:
+        generic = (status_data.get("generic") or {}).get("status") or {}
+        raw = (generic.get("text") or "").strip()
+    # Take the first word only (e.g. "Departed 14:30" -> "departed")
+    return raw.split()[0].lower() if raw else ""
 
 # Cache: airport_iata -> {"flights": [...], "departed_count": int, "timestamp": unix_ts}
 _results_cache: dict[str, dict] = {}
@@ -133,6 +152,7 @@ class FlightService:
 
         icao = airport_info["icao"]
         all_flights = []
+        schedule_total = 0  # Total departures reported by FR24 schedule
 
         # Fetch page 1 with limited retries (2 attempts total, 0.5s backoff)
         try:
@@ -141,15 +161,16 @@ class FlightService:
                 retries=2,
                 backoff=0.5,
             )
-            departures = (
+            dep_section = (
                 details
                 .get("airport", {})
                 .get("pluginData", {})
                 .get("schedule", {})
                 .get("departures", {})
-                .get("data", [])
             )
-            all_flights.extend(departures)
+            all_flights.extend(dep_section.get("data", []))
+            # FR24 reports total scheduled departures in item.total
+            schedule_total = (dep_section.get("item") or {}).get("total", 0)
         except Exception as e:
             logger.error(f"All retries failed for {airport_iata} page 1: {e}")
             # Return stale cache (any age) — stale data beats no data
@@ -178,23 +199,13 @@ class FlightService:
         evac_flights = []
         departed_count = 0
 
-        # Statuses that confirm the flight has left the airport
-        DEPARTED_STATUSES = {"departed", "landed"}
-
         for flight_data in all_flights:
             # Count departed/landed flights before filtering them out
             flight_info = flight_data.get("flight") or {}
             status_data = flight_info.get("status") or {}
-            status_text = (status_data.get("text") or "").lower().strip()
-            if not status_text:
-                generic = (status_data.get("generic") or {}).get("status") or {}
-                status_text = (generic.get("text") or "").lower().strip()
-            # Also check the generic status type — FR24 sometimes puts
-            # "Estimated 14:30" in text but "departure" in generic.type
-            generic_status = (status_data.get("generic") or {}).get("status") or {}
-            generic_text = (generic_status.get("text") or "").lower().strip()
+            status_word = _normalize_status(status_data)
 
-            if status_text in DEPARTED_STATUSES or generic_text in DEPARTED_STATUSES:
+            if status_word in DEPARTED_STATUSES:
                 departed_count += 1
 
             evac = self._process_flight(flight_data, airport_iata, airport_info, airlines_map)
@@ -202,6 +213,11 @@ class FlightService:
                 evac_flights.append(evac)
 
         evac_flights.sort(key=lambda f: f.scheduled_departure)
+
+        logger.info(
+            f"{airport_iata}: {departed_count} departed/landed out of "
+            f"{len(all_flights)} fetched, schedule_total={schedule_total}"
+        )
 
         # Update cache (includes departed count for airport status)
         self._set_cached(airport_iata, evac_flights, departed_count)
@@ -247,12 +263,9 @@ class FlightService:
             # when the key exists but its value is explicitly None.
             flight_info = flight_data.get("flight") or {}
 
-            # Extract status
+            # Extract status — normalize "Departed 14:30" → "departed"
             status_data = flight_info.get("status") or {}
-            status_text = (status_data.get("text") or "").lower().strip()
-            if not status_text:
-                generic = (status_data.get("generic") or {}).get("status") or {}
-                status_text = (generic.get("text") or "").lower().strip()
+            status_text = _normalize_status(status_data)
 
             # Filter: only viable statuses
             if status_text in EXCLUDED_STATUSES:
