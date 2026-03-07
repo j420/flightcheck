@@ -407,7 +407,7 @@
                     showError(`Error fetching ${iata}: ${data.error}`);
                     if (!lastData) showStatus('Failed to load. Retrying automatically...');
                 } else {
-                    lastData = {[iata]: { airport_name: data.airport_name, city: data.city, flights: data.flights }};
+                    lastData = {[iata]: { airport_name: data.airport_name, city: data.city, flights: data.flights, departed_today: data.departed_today || 0 }};
                     currentPage[iata] = 1;
                     lastFetchedAt = data.fetched_at || new Date().toISOString();
                     updateTimestamp();
@@ -450,7 +450,7 @@
                     const resp = await fetchWithRetry(`${API_BASE}/departures/${iata}`);
                     const data = await safeJson(resp);
                     if (!data.error && data.flights) {
-                        lastData[iata] = { airport_name: data.airport_name, city: data.city, flights: data.flights };
+                        lastData[iata] = { airport_name: data.airport_name, city: data.city, flights: data.flights, departed_today: data.departed_today || 0 };
                         currentPage[iata] = currentPage[iata] || 1;
                         if (data.fetched_at) lastFetchedAt = data.fetched_at;
                     } else { failed++; }
@@ -619,6 +619,7 @@
                     airport_name: info.airport_name,
                     city: info.city,
                     count: flights.length,
+                    departed_today: info.departed_today || 0,
                     flights: flights,
                 };
                 totalCount += flights.length;
@@ -849,7 +850,10 @@
                     <span class="airport-iata">${esc(airport)}</span>
                     <span class="airport-detail">${esc(info.city)} &middot; ${esc(info.airport_name)}</span>
                 </div>
-                <span class="airport-flight-count"></span>
+                <div class="airport-header-badges">
+                    <span class="airport-departed-count"></span>
+                    <span class="airport-flight-count"></span>
+                </div>
             `;
             section.appendChild(header);
 
@@ -926,6 +930,16 @@
                 }
 
                 section.querySelector('.airport-flight-count').textContent = `${info.count} flights`;
+
+                const departedBadge = section.querySelector('.airport-departed-count');
+                const departed = info.departed_today || 0;
+                if (departed > 0) {
+                    departedBadge.innerHTML = `<svg viewBox="0 0 20 20" fill="currentColor" width="12" height="12"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg> ${departed} departed`;
+                    departedBadge.className = 'airport-departed-count departed-active';
+                } else {
+                    departedBadge.textContent = 'No departures yet';
+                    departedBadge.className = 'airport-departed-count departed-none';
+                }
 
                 const table = section.querySelector('table');
                 const oldTbody = table.querySelector('tbody');

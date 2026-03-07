@@ -31,7 +31,7 @@ VIABLE_STATUSES = {"scheduled", "estimated", "delayed"}
 # Statuses to exclude explicitly
 EXCLUDED_STATUSES = {"canceled", "cancelled", "diverted", "landed", "departed"}
 
-# Cache: airport_iata -> {"flights": [...], "timestamp": unix_ts}
+# Cache: airport_iata -> {"flights": [...], "departed_count": int, "timestamp": unix_ts}
 _results_cache: dict[str, dict] = {}
 _cache_lock = Lock()
 CACHE_TTL_SECONDS = 120  # serve cached data for up to 2 minutes
@@ -102,6 +102,14 @@ class FlightService:
 
         return self._airlines_map_cache
 
+    def get_departed_count(self, airport_iata: str) -> int:
+        """Return the number of departed flights from cache for an airport."""
+        with _cache_lock:
+            cached = _results_cache.get(airport_iata.upper())
+        if cached:
+            return cached.get("departed_count", 0)
+        return 0
+
     def get_departures(self, airport_iata: str) -> list[EvacFlight]:
         """
         Fetch departures from a GCC airport and filter for evacuation-viable flights.
@@ -168,16 +176,27 @@ class FlightService:
 
         airlines_map = self.get_airlines_map()
         evac_flights = []
+        departed_count = 0
 
         for flight_data in all_flights:
+            # Count departed flights before filtering them out
+            flight_info = flight_data.get("flight") or {}
+            status_data = flight_info.get("status") or {}
+            status_text = (status_data.get("text") or "").lower().strip()
+            if not status_text:
+                generic = (status_data.get("generic") or {}).get("status") or {}
+                status_text = (generic.get("text") or "").lower().strip()
+            if status_text == "departed":
+                departed_count += 1
+
             evac = self._process_flight(flight_data, airport_iata, airport_info, airlines_map)
             if evac:
                 evac_flights.append(evac)
 
         evac_flights.sort(key=lambda f: f.scheduled_departure)
 
-        # Update cache
-        self._set_cached(airport_iata, evac_flights)
+        # Update cache (includes departed count for airport status)
+        self._set_cached(airport_iata, evac_flights, departed_count)
 
         return evac_flights
 
@@ -197,11 +216,12 @@ class FlightService:
             return time.time() - cached["timestamp"]
         return None
 
-    def _set_cached(self, airport_iata: str, flights: list[EvacFlight]):
+    def _set_cached(self, airport_iata: str, flights: list[EvacFlight], departed_count: int = 0):
         """Cache results for an airport."""
         with _cache_lock:
             _results_cache[airport_iata] = {
                 "flights": flights,
+                "departed_count": departed_count,
                 "timestamp": time.time(),
             }
 
