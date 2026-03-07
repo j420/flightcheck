@@ -56,6 +56,7 @@ AIRLINE_BOOKING_URLS = {
     "AXB": "https://www.airexplore.eu",
     "ABY": "https://www.airarabia.com/en/booking",
     "WIZ": "https://wizzair.com/en-gb/booking",
+    "NAS": "https://booking.flynas.com",
     "THY": "https://www.turkishairlines.com/en-int/flights/booking",
     "BAW": "https://www.britishairways.com/travel/book",
     "DLH": "https://www.lufthansa.com/xx/en/book-a-flight",
