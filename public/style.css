@@ -871,9 +871,6 @@ tbody td {
     transform: translateY(-0.5px);
 }
 
-.btn-google  { background: #4285f4; }
-.btn-google:hover  { background: #5a9bf5; box-shadow: 0 2px 4px rgba(66,133,244,0.3); }
-
 .btn-kayak   { background: #ff6d00; }
 .btn-kayak:hover   { background: #ff8533; box-shadow: 0 2px 4px rgba(255,109,0,0.3); }
 

@@ -767,7 +767,6 @@
                     <td class="cell-aircraft">${esc(flight.aircraft_type || '\u2014')}</td>
                     <td class="cell-avail">${getAvailabilityHtml(airport, flight)}</td>
                     <td class="cell-actions">
-                        <a href="${esc(gfUrl)}" target="_blank" rel="noopener" class="btn-action btn-google" title="Google Flights">Google</a>
                         <a href="${esc(skyscannerUrl)}" target="_blank" rel="noopener" class="btn-action btn-sky" title="Skyscanner">Sky</a>
                         <a href="${esc(kayakUrl)}" target="_blank" rel="noopener" class="btn-action btn-kayak" title="KAYAK">Kayak</a>
                         ${airlineUrl ? `<a href="${esc(airlineUrl)}" target="_blank" rel="noopener" class="btn-action btn-airline" title="Airline website">Airline</a>` : ''}
