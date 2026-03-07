@@ -60,6 +60,7 @@ def api_departures(airport_iata: str):
         "airport_name": GCC_AIRPORTS[airport_iata]["name"],
         "city": GCC_AIRPORTS[airport_iata]["city"],
         "count": len(flights),
+        "departed_today": flight_service.get_departed_count(airport_iata),
         "fetched_at": _utc_now(),
         "flights": [f.to_dict() for f in flights],
     })

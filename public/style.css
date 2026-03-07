@@ -616,6 +616,13 @@ main {
     font-weight: 450;
 }
 
+.airport-header-badges {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
 .airport-flight-count {
     font-size: 0.78rem;
     font-weight: 700;
@@ -624,6 +631,27 @@ main {
     padding: 0.2rem 0.6rem;
     border-radius: 20px;
     white-space: nowrap;
+}
+
+.airport-departed-count {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.2rem 0.6rem;
+    border-radius: 20px;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.departed-active {
+    color: #15803d;
+    background: #dcfce7;
+}
+
+.departed-none {
+    color: #b45309;
+    background: #fef3c7;
 }
 
 /* ---- Table ---- */
