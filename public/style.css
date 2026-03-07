@@ -654,6 +654,44 @@ main {
     background: #fef3c7;
 }
 
+/* ---- Departed summary banner ---- */
+
+.departed-summary {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1rem;
+    background: linear-gradient(to right, rgba(5,150,105,0.03), rgba(5,150,105,0.06), rgba(5,150,105,0.03));
+    border-bottom: 1px solid rgba(5,150,105,0.1);
+}
+
+.dep-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    padding: 0.25rem 0.7rem;
+    border-radius: 20px;
+    white-space: nowrap;
+}
+
+.dep-chip strong {
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.dep-chip-active {
+    color: #15803d;
+    background: #dcfce7;
+}
+
+.dep-chip-zero {
+    color: #92400e;
+    background: #fef3c7;
+}
+
 /* ---- Table ---- */
 
 .table-wrap {
@@ -1063,6 +1101,16 @@ footer p + p {
     .ops-banner {
         font-size: 0.72rem;
         padding: 0.45rem 0.75rem;
+    }
+
+    .departed-summary {
+        gap: 0.35rem;
+        padding: 0.45rem 0.5rem;
+    }
+
+    .dep-chip {
+        font-size: 0.7rem;
+        padding: 0.2rem 0.5rem;
     }
 
     main {
