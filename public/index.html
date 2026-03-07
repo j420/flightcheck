@@ -658,41 +658,74 @@
             return `https://www.google.com/travel/flights/search?tfs=${b64}&hl=en`;
         }
 
+        // Date helper: '2026-03-15' → '15032026' (DDMMYYYY)
+        function _dateDDMMYYYY(d) { const p = d.split('-'); return p[2] + p[1] + p[0]; }
+        // Date helper: '2026-03-15' → '150326' (DDMMYY)
+        function _dateDDMMYY(d) { const p = d.split('-'); return p[2] + p[1] + p[0].slice(2); }
+        // Date helper: '2026-03-15' → '20260315'
+        function _dateCompact(d) { return d.replace(/-/g, ''); }
+
         const AIRLINE_LINKS = {
+            // --- GCC major carriers (deep links with pre-filled search) ---
             QTR: (o, d, date) =>
                 `https://booking.qatarairways.com/nsp/views/deepLinkLoader.xhtml?origin=${o}&destination=${d}&departureDate=${date}&adults=1&children=0&infants=0&cabinClass=Y&tripType=O`,
-            UAE: 'https://www.emirates.com/flights/book',
-            ETD: 'https://www.etihad.com/en/book',
-            SVA: 'https://www.saudia.com/booking',
-            GFA: 'https://www.gulfair.com/book',
-            KAC: 'https://www.kuwaitairways.com/en/booking',
-            OMA: 'https://www.omanair.com/en/book',
-            FDB: 'https://www.flydubai.com/en/booking',
-            ABY: 'https://www.airarabia.com/en/booking',
-            THY: 'https://www.turkishairlines.com/en-int/flights/booking',
-            BAW: 'https://www.britishairways.com/travel/book/public/en_gb',
-            DLH: 'https://www.lufthansa.com/xx/en/book-a-flight',
-            AFR: 'https://www.airfrance.com/booking',
-            KLM: 'https://www.klm.com/booking',
-            SIA: 'https://www.singaporeair.com/en_UK/plan-and-book',
+            UAE: (o, d, date) =>
+                `https://www.emirates.com/flights/search/?departureDate=${_dateCompact(date)}&returnDate=&origin=${o}&destination=${d}&adults=1&children=0&infants=0&class=Economy&tripType=OW`,
+            ETD: (o, d, date) =>
+                `https://www.etihad.com/en/book/bookflight?departure=${_dateDDMMYYYY(date)}&from=${o}&to=${d}&adults=1&children=0&infants=0&class=Economy`,
+            FDB: (o, d, date) =>
+                `https://book.flydubai.com/Flight/Search?culture=en-gb&origin=${o}&destination=${d}&departure=${date}&adults=1&children=0&infants=0`,
+            ABY: (o, d, date) =>
+                `https://www.airarabia.com/en/booking?origin=${o}&destination=${d}&departure=${date}&adults=1&children=0&infants=0&tripType=one-way`,
+            SVA: (o, d, date) =>
+                `https://www.saudia.com/booking?origin=${o}&destination=${d}&departureDate=${date}&adults=1&children=0&infants=0&type=one-way`,
+            GFA: (o, d, date) =>
+                `https://www.gulfair.com/book?origin=${o}&destination=${d}&departDate=${date}&adults=1&children=0&infants=0&tripType=one-way`,
+            KAC: (o, d, date) =>
+                `https://www.kuwaitairways.com/en/booking?from=${o}&to=${d}&departure=${date}&adults=1&children=0&infants=0`,
+            OMA: (o, d, date) =>
+                `https://www.omanair.com/en/book?origin=${o}&destination=${d}&departureDate=${date}&adults=1&children=0&infants=0&tripType=O`,
+            // --- International carriers (deep links where supported) ---
+            THY: (o, d, date) =>
+                `https://www.turkishairlines.com/en-int/flights/booking/?origin=${o}&destination=${d}&departureDate=${_dateDDMMYYYY(date)}&adults=1&children=0&infants=0`,
+            BAW: (o, d, date) =>
+                `https://www.britishairways.com/travel/book/public/en_gb?from=${o}&to=${d}&depDate=${_dateDDMMYY(date)}&cabin=M&adult=1&child=0&infant=0&type=OW`,
+            DLH: (o, d, date) =>
+                `https://www.lufthansa.com/xx/en/flight-search?origin=${o}&destination=${d}&outbound-date=${date}&cabin-class=economy&adults=1&children=0&infants=0&type=OW`,
+            AFR: (o, d, date) =>
+                `https://www.airfrance.com/booking/search?pax=1:0:0:0:0:0:0:0&cabinClass=ECONOMY&activeConnection=0&connections=${o}:A>${d}:A-${date}`,
+            KLM: (o, d, date) =>
+                `https://www.klm.com/booking/search?pax=1:0:0:0:0:0:0:0&cabinClass=ECONOMY&activeConnection=0&connections=${o}:A>${d}:A-${date}`,
+            SIA: (o, d, date) =>
+                `https://www.singaporeair.com/en_UK/plan-and-book/book-a-flight?from=${o}&to=${d}&departDate=${date}&cabinClass=Y&adults=1&children=0&infants=0`,
             CPA: 'https://www.cathaypacific.com/cx/en_HK/book-a-trip',
-            DAL: 'https://www.delta.com/flight-search',
-            AAL: 'https://www.aa.com/booking',
-            UAL: 'https://www.united.com/en/us/book-flight',
-            AIC: 'https://www.airindia.com/en/book.html',
-            IGO: 'https://www.goindigo.in/booking',
+            DAL: (o, d, date) =>
+                `https://www.delta.com/flight-search/search-results?departure=${o}&arrival=${d}&departureDate=${date}&passengers=1&tripType=ONE_WAY`,
+            AAL: (o, d, date) =>
+                `https://www.aa.com/booking/search?locale=en_US&type=OW&from=${o}&to=${d}&date=${date}&adult=1&child=0`,
+            UAL: (o, d, date) =>
+                `https://www.united.com/en/us/fsr/choose-flights?f=${o}&t=${d}&d=${date}&tt=1&at=1&sc=7&px=1&taxng=1&newHP=True&clm=7&st=bestmatches`,
+            AIC: (o, d, date) =>
+                `https://www.airindia.com/en/book.html?origin=${o}&destination=${d}&departDate=${date}&adults=1&children=0&infants=0&tripType=O`,
+            IGO: (o, d, date) =>
+                `https://www.goindigo.in/booking/flight-select?origin=${o}&destination=${d}&departDate=${date}&adults=1&children=0&infants=0`,
             PAL: 'https://www.philippineairlines.com/en/booking',
             MAS: 'https://www.malaysiaairlines.com/booking',
             PIA: 'https://www.piac.com.pk/booking',
-            EGF: 'https://www.egyptair.com/en/fly/book-a-flight',
+            EGF: (o, d, date) =>
+                `https://www.egyptair.com/en/fly/book-a-flight?origin=${o}&destination=${d}&departureDate=${date}&adults=1&children=0&infants=0`,
             RJA: 'https://www.rj.com/en/book',
             MEA: 'https://www.mea.com.lb/english/book',
-            ETH: 'https://www.ethiopianairlines.com/book',
+            ETH: (o, d, date) =>
+                `https://www.ethiopianairlines.com/book?origin=${o}&destination=${d}&departureDate=${date}&adults=1&children=0&infants=0&tripType=one-way`,
             KQA: 'https://www.kenya-airways.com/booking',
-            SWR: 'https://www.swiss.com/ch/en/book',
-            AUA: 'https://www.austrian.com/at/en/book',
+            SWR: (o, d, date) =>
+                `https://www.swiss.com/ch/en/book/offers/flights?originCode=${o}&destinationCode=${d}&travelDate=${date}&cabinClass=economy&adults=1&children=0&infants=0&type=OW`,
+            AUA: (o, d, date) =>
+                `https://www.austrian.com/at/en/book/offers/flights?originCode=${o}&destinationCode=${d}&travelDate=${date}&cabinClass=economy&adults=1&children=0&infants=0&type=OW`,
             TAP: 'https://www.flytap.com/en/booking',
-            WIZ: 'https://wizzair.com/en-gb/booking',
+            WIZ: (o, d, date) =>
+                `https://wizzair.com/en-gb/booking/select-flight/${o}/${d}/${date}/null/1/0/0/null`,
         };
 
         function buildAirlineUrl(airlineIcao, origin, dest, date) {
