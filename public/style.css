@@ -514,6 +514,7 @@ main {
     color: var(--warning);
 }
 
+/* departed status badge kept for any edge cases */
 .status-pill.active[data-status="departed"] {
     background: rgba(139,92,246,0.12);
     border-color: #a78bfa;
