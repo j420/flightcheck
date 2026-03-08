@@ -40,7 +40,7 @@ DEPARTED_STATUSES = {"departed", "landed", "airborne", "en"}  # "en" catches "En
 DEPARTED_TYPES = {"departure"}
 
 # How far back to count departed flights (seconds)
-DEPARTED_WINDOW_SECONDS = 12 * 3600  # 12 hours
+DEPARTED_WINDOW_SECONDS = 6 * 3600  # 6 hours
 
 
 # IATA → ICAO airline code mapping (fallback when FR24 only provides IATA)
@@ -333,8 +333,10 @@ class FlightService:
             status_data = flight_info.get("status") or {}
             status_text = _normalize_status(status_data)
 
-            # Filter: only viable statuses
-            if status_text in EXCLUDED_STATUSES:
+            # Track whether this is a departed/landed flight (still shown, but marked)
+            is_departed_status = status_text in EXCLUDED_STATUSES
+            # Cancelled/diverted flights are still excluded — they're not useful
+            if status_text in {"canceled", "cancelled", "diverted"}:
                 return None
 
             # Extract destination
@@ -427,9 +429,11 @@ class FlightService:
                 f"{origin_iata}+to+{dest_iata}{date_part}"
             )
 
-            # If delayed, override status so the frontend can show it
+            # Override display status for clarity
             display_status = status_text.capitalize() if status_text else "Unknown"
-            if delay_minutes > 0:
+            if is_departed_status:
+                display_status = "Departed"
+            elif delay_minutes > 0:
                 display_status = "Delayed"
 
             return EvacFlight(

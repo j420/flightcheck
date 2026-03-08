@@ -514,6 +514,12 @@ main {
     color: var(--warning);
 }
 
+.status-pill.active[data-status="departed"] {
+    background: rgba(139,92,246,0.12);
+    border-color: #a78bfa;
+    color: #a78bfa;
+}
+
 .filter-meta {
     display: flex;
     align-items: center;
@@ -881,6 +887,11 @@ tbody td {
 .status-delayed {
     background: rgba(251,191,36,0.12);
     color: var(--warning);
+}
+
+.status-departed {
+    background: rgba(139,92,246,0.12);
+    color: #a78bfa;
 }
 
 .status-unknown {
