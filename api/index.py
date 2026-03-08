@@ -96,6 +96,99 @@ def api_departed_counts():
     })
 
 
+@app.route("/api/debug/departed/<airport_iata>")
+def api_debug_departed(airport_iata: str):
+    """
+    Debug endpoint: show raw FR24 signals for all flights at an airport.
+    Helps verify departed count accuracy by exposing what FR24 actually returns.
+    """
+    airport_iata = airport_iata.upper()
+    if airport_iata not in GCC_AIRPORTS:
+        return jsonify({"error": f"Unknown airport: {airport_iata}"}), 400
+
+    from flight_service import (
+        _normalize_status, DEPARTED_STATUSES, DEPARTED_WINDOW_SECONDS, _retry_api_call
+    )
+    import time as _time
+
+    icao = GCC_AIRPORTS[airport_iata]["icao"]
+    try:
+        details = _retry_api_call(
+            lambda: flight_service.api.get_airport_details(icao, flight_limit=100, page=1),
+            retries=2, backoff=0.5,
+        )
+        all_flights = (
+            details.get("airport", {}).get("pluginData", {})
+            .get("schedule", {}).get("departures", {}).get("data", [])
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    now_ts = _time.time()
+    cutoff_ts = now_ts - DEPARTED_WINDOW_SECONDS
+    results = []
+    departed_count = 0
+
+    for fd in all_flights:
+        fi = fd.get("flight") or {}
+        status_data = fi.get("status") or {}
+        status_word = _normalize_status(status_data)
+        is_live = bool(status_data.get("live"))
+        generic = (status_data.get("generic") or {}).get("status") or {}
+        generic_type = (generic.get("type") or "").lower()
+        generic_text = (generic.get("text") or "").lower()
+
+        time_info = fi.get("time") or {}
+        dep_scheduled = ((time_info.get("scheduled") or {}).get("departure")) or 0
+        dep_estimated = ((time_info.get("estimated") or {}).get("departure")) or 0
+        dep_actual = ((time_info.get("real") or {}).get("departure")) or 0
+
+        # Determine which signal triggered
+        triggered_by = None
+        if status_word in DEPARTED_STATUSES:
+            triggered_by = f"status_word={status_word}"
+        elif generic_text in {"departed", "landed", "airborne", "en route"}:
+            triggered_by = f"generic_text={generic_text}"
+        elif is_live:
+            triggered_by = "is_live=True"
+        elif dep_actual and dep_actual > 0:
+            triggered_by = f"dep_actual={dep_actual}"
+
+        is_departed = triggered_by is not None
+        if is_departed:
+            departed_count += 1
+
+        # Flight identification
+        ident = fi.get("identification") or {}
+        number = (ident.get("number") or {}).get("default") or "?"
+
+        results.append({
+            "flight": number,
+            "departed": is_departed,
+            "triggered_by": triggered_by,
+            "status_text_raw": (status_data.get("text") or ""),
+            "status_word": status_word,
+            "generic_type": generic_type,
+            "generic_text": generic_text,
+            "is_live": is_live,
+            "dep_scheduled": dep_scheduled,
+            "dep_estimated": dep_estimated,
+            "dep_actual": dep_actual,
+            "dep_scheduled_human": datetime.fromtimestamp(dep_scheduled, tz=timezone.utc).strftime("%H:%M UTC") if dep_scheduled else None,
+            "dep_actual_human": datetime.fromtimestamp(dep_actual, tz=timezone.utc).strftime("%H:%M UTC") if dep_actual else None,
+        })
+
+    return jsonify({
+        "airport": airport_iata,
+        "total_flights": len(all_flights),
+        "departed_count": departed_count,
+        "not_departed_count": len(all_flights) - departed_count,
+        "now_utc": datetime.now(tz=timezone.utc).strftime("%H:%M UTC"),
+        "cutoff_utc": datetime.fromtimestamp(cutoff_ts, tz=timezone.utc).strftime("%H:%M UTC"),
+        "flights": results,
+    })
+
+
 @app.route("/api/scan")
 def api_scan():
     """Scan selected airports for evacuation flights."""
