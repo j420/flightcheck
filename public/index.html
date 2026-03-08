@@ -43,10 +43,10 @@
         Always verify status and availability directly with the airline before booking.
     </div>
 
-    <!-- Operational status banners -->
-    <div class="ops-banner ops-banner-open">
-        <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
-        <span><strong>Muscat (MCT)</strong> is now operational &mdash; flights available from Muscat International Airport</span>
+    <!-- Per-airport departure counts (populated dynamically after data loads) -->
+    <div id="airport-departures-banner" class="ops-banner ops-banner-open hidden">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"/></svg>
+        <span id="airport-departures-content"></span>
     </div>
 
     <main>
@@ -141,8 +141,6 @@
             <div class="status-pills">
                 <button class="status-pill active" data-status="scheduled" onclick="toggleStatusPill(this)">Scheduled</button>
                 <button class="status-pill active" data-status="estimated" onclick="toggleStatusPill(this)">Estimated</button>
-                <button class="status-pill" data-status="delayed" onclick="toggleStatusPill(this)">Delayed</button>
-                <button class="status-pill" data-status="unknown" onclick="toggleStatusPill(this)">Unknown</button>
             </div>
             <div class="filter-meta">
                 <select id="filter-availability" class="filter-select">
@@ -333,6 +331,43 @@
             }
         }
 
+        // ---- Hourly departure banner refresh (independent of main search) ----
+        const BANNER_REFRESH_MS = 3600000; // 1 hour
+        let bannerRefreshTimer = null;
+
+        async function refreshDepartureBanner() {
+            try {
+                const promises = MAJOR_AIRPORTS.map(async (iata) => {
+                    try {
+                        const resp = await fetchWithTimeout(`${API_BASE}/departures/${iata}`, 20000);
+                        const data = await safeJson(resp);
+                        if (!data.error && data.flights) {
+                            // Update lastData for this airport (merge, don't overwrite other airports)
+                            if (!lastData) lastData = {};
+                            lastData[iata] = {
+                                airport_name: data.airport_name,
+                                city: data.city,
+                                flights: data.flights,
+                                departed_today: data.departed_today || 0,
+                            };
+                        }
+                    } catch (e) { /* individual airport failure is OK */ }
+                });
+                await Promise.all(promises);
+                updateDepartedSummary();
+            } catch (e) { /* banner refresh is best-effort */ }
+        }
+
+        function startBannerRefresh() {
+            if (bannerRefreshTimer) clearInterval(bannerRefreshTimer);
+            // Initial load of banner data
+            refreshDepartureBanner();
+            bannerRefreshTimer = setInterval(refreshDepartureBanner, BANNER_REFRESH_MS);
+        }
+
+        // Start banner refresh on page load
+        startBannerRefresh();
+
         // ---- Filters ----
 
         function getStatusFilters() {
@@ -351,11 +386,10 @@
 
         function filterFlights(flights) {
             const allowed = getStatusFilters();
+            if (allowed.length === 0) return flights; // no pills active = show all
             return flights.filter(f => {
                 const s = f.status.toLowerCase();
-                if (allowed.includes(s)) return true;
-                if (allowed.includes('unknown') && !['scheduled', 'estimated', 'delayed', 'canceled', 'cancelled', 'diverted', 'landed'].includes(s)) return true;
-                return false;
+                return allowed.includes(s);
             });
         }
 
@@ -615,6 +649,31 @@
         const DEPARTED_BANNER_AIRPORTS = MAJOR_AIRPORTS;
 
         function updateDepartedSummary() {
+            // --- Top banner: per-airport flight counts ---
+            const banner = document.getElementById('airport-departures-banner');
+            const bannerContent = document.getElementById('airport-departures-content');
+            if (lastData && Object.keys(lastData).length > 0) {
+                const chips = DEPARTED_BANNER_AIRPORTS
+                    .filter(iata => lastData[iata])
+                    .map(iata => {
+                        const info = lastData[iata];
+                        const flightCount = (info.flights || []).length;
+                        const departed = info.departed_today || 0;
+                        const cls = flightCount > 0 ? 'dep-chip dep-chip-active' : 'dep-chip dep-chip-zero';
+                        const depTag = departed > 0 ? ` <small style="opacity:0.7">(${departed} dep)</small>` : '';
+                        return `<span class="${cls}"><strong>${esc(iata)}</strong> ${flightCount} flights${depTag}</span>`;
+                    });
+                if (chips.length > 0) {
+                    bannerContent.innerHTML = `<strong>Departures per airport:</strong> ` + chips.join('');
+                    banner.classList.remove('hidden');
+                } else {
+                    banner.classList.add('hidden');
+                }
+            } else {
+                banner.classList.add('hidden');
+            }
+
+            // --- Departed summary row ---
             const el = document.getElementById('departed-summary');
             if (!lastData) { el.classList.add('hidden'); return; }
 
@@ -629,14 +688,14 @@
             if (items.length === 0) { el.classList.add('hidden'); return; }
 
             const totalDeparted = items.reduce((s, i) => s + i.count, 0);
-            const activeCount = items.filter(i => i.count > 0).length;
-            const label = `<span class="dep-label"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"/></svg> Departures (12h):</span>`;
-            const chips = items.map(({ iata, count }) => {
-                const cls = count > 0 ? 'dep-chip dep-chip-active' : 'dep-chip dep-chip-zero';
-                return `<span class="${cls}"><strong>${iata}</strong> ${count}</span>`;
+            if (totalDeparted === 0) { el.classList.add('hidden'); return; }
+
+            const label = `<span class="dep-label"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"/></svg> Departed (12h):</span>`;
+            const depChips = items.filter(i => i.count > 0).map(({ iata, count }) => {
+                return `<span class="dep-chip dep-chip-active"><strong>${iata}</strong> ${count}</span>`;
             }).join('');
 
-            el.innerHTML = label + chips;
+            el.innerHTML = label + depChips;
             el.classList.remove('hidden');
         }
 
