@@ -709,6 +709,7 @@ main {
     padding: 0.25rem 0.7rem;
     border-radius: 20px;
     white-space: nowrap;
+    margin: 0.15rem 0.3rem;
 }
 
 .dep-label {
