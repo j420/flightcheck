@@ -142,6 +142,7 @@
                 <button class="status-pill active" data-status="scheduled" onclick="toggleStatusPill(this)">Scheduled</button>
                 <button class="status-pill active" data-status="estimated" onclick="toggleStatusPill(this)">Estimated</button>
                 <button class="status-pill active" data-status="delayed" onclick="toggleStatusPill(this)">Delayed</button>
+                <button class="status-pill" data-status="departed" onclick="toggleStatusPill(this)">Departed</button>
             </div>
             <div class="filter-meta">
                 <select id="filter-availability" class="filter-select">
@@ -1098,6 +1099,7 @@
                 case 'scheduled': return 'status-scheduled';
                 case 'estimated': return 'status-estimated';
                 case 'delayed': return 'status-delayed';
+                case 'departed': case 'landed': return 'status-departed';
                 default: return 'status-unknown';
             }
         }
