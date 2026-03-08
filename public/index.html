@@ -142,7 +142,6 @@
                 <button class="status-pill active" data-status="scheduled" onclick="toggleStatusPill(this)">Scheduled</button>
                 <button class="status-pill active" data-status="estimated" onclick="toggleStatusPill(this)">Estimated</button>
                 <button class="status-pill active" data-status="delayed" onclick="toggleStatusPill(this)">Delayed</button>
-                <button class="status-pill" data-status="departed" onclick="toggleStatusPill(this)">Departed</button>
             </div>
             <div class="filter-meta">
                 <select id="filter-availability" class="filter-select">
@@ -651,22 +650,25 @@
         const DEPARTED_BANNER_AIRPORTS = MAJOR_AIRPORTS;
 
         function updateDepartedSummary() {
-            // --- Top banner: per-airport flight counts ---
+            // --- Top banner: per-airport departed counts (6h) ---
             const banner = document.getElementById('airport-departures-banner');
             const bannerContent = document.getElementById('airport-departures-content');
+
+            // Hide the old departed-summary row (replaced by banner)
+            const oldSummary = document.getElementById('departed-summary');
+            if (oldSummary) oldSummary.classList.add('hidden');
+
             if (lastData && Object.keys(lastData).length > 0) {
                 const chips = DEPARTED_BANNER_AIRPORTS
                     .filter(iata => lastData[iata])
                     .map(iata => {
                         const info = lastData[iata];
-                        const flightCount = (info.flights || []).length;
                         const departed = info.departed_today || 0;
-                        const cls = flightCount > 0 ? 'dep-chip dep-chip-active' : 'dep-chip dep-chip-zero';
-                        const depTag = departed > 0 ? ` <small style="opacity:0.7">(${departed} dep)</small>` : '';
-                        return `<span class="${cls}"><strong>${esc(iata)}</strong> ${flightCount} flights${depTag}</span>`;
+                        const cls = departed > 0 ? 'dep-chip dep-chip-active' : 'dep-chip dep-chip-zero';
+                        return `<span class="${cls}"><strong>${esc(iata)}</strong> ${departed}</span>`;
                     });
                 if (chips.length > 0) {
-                    bannerContent.innerHTML = `<strong>Departures per airport:</strong> ` + chips.join('');
+                    bannerContent.innerHTML = `<strong>Departed (6h):</strong> ` + chips.join('');
                     banner.classList.remove('hidden');
                 } else {
                     banner.classList.add('hidden');
@@ -674,31 +676,6 @@
             } else {
                 banner.classList.add('hidden');
             }
-
-            // --- Departed summary row ---
-            const el = document.getElementById('departed-summary');
-            if (!lastData) { el.classList.add('hidden'); return; }
-
-            const items = [];
-            for (const iata of DEPARTED_BANNER_AIRPORTS) {
-                const info = lastData[iata];
-                if (!info) continue;
-                const count = info.departed_today || 0;
-                items.push({ iata, count });
-            }
-
-            if (items.length === 0) { el.classList.add('hidden'); return; }
-
-            const totalDeparted = items.reduce((s, i) => s + i.count, 0);
-            if (totalDeparted === 0) { el.classList.add('hidden'); return; }
-
-            const label = `<span class="dep-label"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"/></svg> Departed (12h):</span>`;
-            const depChips = items.filter(i => i.count > 0).map(({ iata, count }) => {
-                return `<span class="dep-chip dep-chip-active"><strong>${iata}</strong> ${count}</span>`;
-            }).join('');
-
-            el.innerHTML = label + depChips;
-            el.classList.remove('hidden');
         }
 
         function applyFiltersAndRender() {
@@ -971,7 +948,6 @@
                     <span class="airport-detail">${esc(info.city)} &middot; ${esc(info.airport_name)}</span>
                 </div>
                 <div class="airport-header-badges">
-                    <span class="airport-departed-count"></span>
                     <span class="airport-flight-count"></span>
                 </div>
             `;
@@ -1051,16 +1027,6 @@
 
                 section.querySelector('.airport-flight-count').textContent = `${info.count} flights`;
 
-                const departedBadge = section.querySelector('.airport-departed-count');
-                const departed = info.departed_today || 0;
-                if (departed > 0) {
-                    departedBadge.innerHTML = `<svg viewBox="0 0 20 20" fill="currentColor" width="12" height="12"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg> ${departed} departed`;
-                    departedBadge.className = 'airport-departed-count departed-active';
-                } else {
-                    departedBadge.textContent = 'No departures yet';
-                    departedBadge.className = 'airport-departed-count departed-none';
-                }
-
                 const table = section.querySelector('table');
                 const oldTbody = table.querySelector('tbody');
                 table.replaceChild(buildTbody(pageFlights, airport), oldTbody);
@@ -1099,7 +1065,7 @@
                 case 'scheduled': return 'status-scheduled';
                 case 'estimated': return 'status-estimated';
                 case 'delayed': return 'status-delayed';
-                case 'departed': case 'landed': return 'status-departed';
+                case 'departed': return 'status-departed';
                 default: return 'status-unknown';
             }
         }

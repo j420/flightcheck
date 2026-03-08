@@ -333,10 +333,9 @@ class FlightService:
             status_data = flight_info.get("status") or {}
             status_text = _normalize_status(status_data)
 
-            # Track whether this is a departed/landed flight (still shown, but marked)
-            is_departed_status = status_text in EXCLUDED_STATUSES
-            # Cancelled/diverted flights are still excluded — they're not useful
-            if status_text in {"canceled", "cancelled", "diverted"}:
+            # Exclude flights that already departed, landed, cancelled, or diverted
+            # — they're not bookable. Departed counts are tracked separately.
+            if status_text in EXCLUDED_STATUSES:
                 return None
 
             # Extract destination
@@ -431,9 +430,7 @@ class FlightService:
 
             # Override display status for clarity
             display_status = status_text.capitalize() if status_text else "Unknown"
-            if is_departed_status:
-                display_status = "Departed"
-            elif delay_minutes > 0:
+            if delay_minutes > 0:
                 display_status = "Delayed"
 
             return EvacFlight(
