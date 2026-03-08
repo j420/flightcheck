@@ -91,6 +91,7 @@ class EvacFlight:
     aircraft_type: str = ""
     booking_url: str = ""
     has_gcc_stopover: bool = False
+    delay_minutes: int = 0  # >0 when estimated departure is later than scheduled
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -387,7 +388,7 @@ class FlightService:
             if not airline_name and airline_icao:
                 airline_name = airlines_map.get(airline_icao, "Unknown Airline")
 
-            # Extract departure time
+            # Extract departure time and detect delays
             time_info = flight_info.get("time") or {}
             dep_scheduled = ((time_info.get("scheduled") or {}).get("departure")) or 0
             dep_estimated = ((time_info.get("estimated") or {}).get("departure")) or 0
@@ -397,6 +398,19 @@ class FlightService:
                 dep_str = dep_dt.strftime("%Y-%m-%d %H:%M UTC")
             else:
                 dep_str = "Unknown"
+
+            # Delay detection: if estimated is 15+ minutes after scheduled
+            delay_minutes = 0
+            if (
+                isinstance(dep_scheduled, (int, float))
+                and isinstance(dep_estimated, (int, float))
+                and dep_scheduled > 0
+                and dep_estimated > 0
+                and dep_estimated > dep_scheduled
+            ):
+                diff = int((dep_estimated - dep_scheduled) / 60)
+                if diff >= 15:
+                    delay_minutes = diff
 
             # Extract aircraft
             aircraft = flight_info.get("aircraft", {})
@@ -413,6 +427,11 @@ class FlightService:
                 f"{origin_iata}+to+{dest_iata}{date_part}"
             )
 
+            # If delayed, override status so the frontend can show it
+            display_status = status_text.capitalize() if status_text else "Unknown"
+            if delay_minutes > 0:
+                display_status = "Delayed"
+
             return EvacFlight(
                 flight_number=callsign,
                 airline_name=airline_name,
@@ -423,9 +442,10 @@ class FlightService:
                 destination_name=dest_name,
                 destination_country=dest_country,
                 scheduled_departure=dep_str,
-                status=status_text.capitalize() if status_text else "Unknown",
+                status=display_status,
                 aircraft_type=aircraft_type,
                 booking_url=booking_url,
+                delay_minutes=delay_minutes,
             )
 
         except Exception as e:

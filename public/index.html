@@ -141,6 +141,7 @@
             <div class="status-pills">
                 <button class="status-pill active" data-status="scheduled" onclick="toggleStatusPill(this)">Scheduled</button>
                 <button class="status-pill active" data-status="estimated" onclick="toggleStatusPill(this)">Estimated</button>
+                <button class="status-pill active" data-status="delayed" onclick="toggleStatusPill(this)">Delayed</button>
             </div>
             <div class="filter-meta">
                 <select id="filter-availability" class="filter-select">
@@ -891,8 +892,10 @@
                 const verification = verificationCache[fn];
                 const isCancelled = verification && verification.is_cancelled;
 
-                const statusClass = isCancelled ? 'status-cancelled' : getStatusClass(flight.status);
-                const statusText = isCancelled ? 'Cancelled' : flight.status;
+                const isDelayed = flight.delay_minutes > 0;
+                const statusClass = isCancelled ? 'status-cancelled' : isDelayed ? 'status-delayed' : getStatusClass(flight.status);
+                const delayLabel = isDelayed ? ` (~${flight.delay_minutes >= 60 ? Math.round(flight.delay_minutes / 60) + 'h' : flight.delay_minutes + 'min'})` : '';
+                const statusText = isCancelled ? 'Cancelled' : isDelayed ? `Delayed${delayLabel}` : flight.status;
                 const depDate = flight.scheduled_departure.split(' ')[0] || '';
                 const gfUrl = buildGoogleFlightsUrl(airport, flight.destination_iata, depDate, flight.airline_icao);
                 const airlineUrl = buildAirlineUrl(flight.airline_icao, airport, flight.destination_iata, depDate);
@@ -900,6 +903,7 @@
                 const skyscannerUrl = buildSkyscannerUrl(airport, flight.destination_iata, depDate);
                 const row = document.createElement('tr');
                 if (isCancelled) row.classList.add('flight-cancelled');
+                if (isDelayed) row.classList.add('flight-delayed');
                 row.innerHTML = `
                     <td>
                         <span class="cell-flight-num">${esc(flight.flight_number)}</span>
