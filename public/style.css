@@ -205,9 +205,14 @@ body {
     font-weight: 500;
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.5rem;
     justify-content: center;
     text-align: center;
+}
+
+.ops-banner .dep-chip {
+    font-size: 0.72rem;
 }
 
 .ops-banner-open {
