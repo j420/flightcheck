@@ -243,7 +243,9 @@ class FlightService:
             dep_actual = ((time_info.get("real") or {}).get("departure")) or 0
             dep_time = dep_estimated or dep_scheduled
 
-            # A flight counts as departed if ANY of these are true:
+            # A flight counts as departed if ANY of these EXPLICIT signals are true:
+            # (We do NOT infer departure from past scheduled time alone —
+            #  a flight scheduled for 2h ago may be delayed without updated times.)
             flight_departed = False
 
             # 1. Status text says departed/landed/airborne
@@ -258,9 +260,6 @@ class FlightService:
             # 4. Has an actual departure time recorded
             elif dep_actual and dep_actual > 0:
                 flight_departed = True
-            # 5. Departure time is in the past (within window)
-            elif isinstance(dep_time, (int, float)) and dep_time > 0 and cutoff_ts <= dep_time < now_ts:
-                flight_departed = True
 
             if flight_departed:
                 departed_count += 1
@@ -270,15 +269,6 @@ class FlightService:
                 evac_flights.append(evac)
 
         evac_flights.sort(key=lambda f: f.scheduled_departure)
-
-        # Use schedule_total as a floor for departed count at busy airports
-        # (FR24 only returns ~200 flights but schedule_total reflects all)
-        if schedule_total > len(all_flights) and departed_count > 0:
-            # Estimate: proportion of departed in fetched data × total scheduled
-            ratio = departed_count / max(len(all_flights), 1)
-            estimated_total_departed = int(schedule_total * ratio)
-            if estimated_total_departed > departed_count:
-                departed_count = estimated_total_departed
 
         logger.info(
             f"{airport_iata}: {departed_count} departed out of "
