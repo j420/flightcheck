@@ -855,9 +855,11 @@
                     <td class="cell-aircraft">${esc(flight.aircraft_type || '\u2014')}</td>
                     <td class="cell-avail">${getAvailabilityHtml(airport, flight)}</td>
                     <td class="cell-actions">
-                        <a href="${esc(skyscannerUrl)}" target="_blank" rel="noopener" class="btn-action btn-sky" title="Skyscanner">Sky</a>
-                        <a href="${esc(kayakUrl)}" target="_blank" rel="noopener" class="btn-action btn-kayak" title="KAYAK">Kayak</a>
-                        ${airlineUrl ? `<a href="${esc(airlineUrl)}" target="_blank" rel="noopener" class="btn-action btn-airline" title="Airline website">Airline</a>` : ''}
+                        ${airlineUrl
+                            ? `<a href="${esc(airlineUrl)}" target="_blank" rel="noopener" class="btn-action btn-airline" title="Book on airline website">Book</a>`
+                            : `<a href="${esc(gfUrl)}" target="_blank" rel="noopener" class="btn-action btn-airline" title="Search on Google Flights">Book</a>`}
+                        <a href="${esc(kayakUrl)}" target="_blank" rel="noopener" class="btn-action btn-kayak" title="Compare on KAYAK">Kayak</a>
+                        <a href="${esc(skyscannerUrl)}" target="_blank" rel="noopener" class="btn-action btn-sky" title="Compare on Skyscanner">Sky</a>
                     </td>
                 `;
                 tbody.appendChild(row);
