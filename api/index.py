@@ -66,6 +66,36 @@ def api_departures(airport_iata: str):
     })
 
 
+@app.route("/api/departed-counts")
+def api_departed_counts():
+    """
+    Lightweight endpoint: return departed flight counts (6h) for all major airports.
+    Used by the banner on page load — avoids fetching full flight data for 10 airports.
+    Returns cached counts if available, triggers background fetch for airports with no data.
+    """
+    counts = {}
+    missing = []
+    for iata in PRIMARY_DEPARTURE_AIRPORTS:
+        if flight_service.has_cached_data(iata):
+            counts[iata] = flight_service.get_departed_count(iata)
+        else:
+            missing.append(iata)
+
+    # For airports with no cached data, fetch them (this populates the cache)
+    for iata in missing:
+        try:
+            flight_service.get_departures(iata)
+            counts[iata] = flight_service.get_departed_count(iata)
+        except Exception as e:
+            logger.warning(f"Failed to fetch departed count for {iata}: {e}")
+            counts[iata] = 0
+
+    return jsonify({
+        "counts": counts,
+        "fetched_at": _utc_now(),
+    })
+
+
 @app.route("/api/scan")
 def api_scan():
     """Scan selected airports for evacuation flights."""

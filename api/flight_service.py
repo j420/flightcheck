@@ -298,6 +298,11 @@ class FlightService:
             return cached["flights"]
         return []
 
+    def has_cached_data(self, airport_iata: str) -> bool:
+        """Return True if we have any cached data for this airport."""
+        with _cache_lock:
+            return airport_iata in _results_cache
+
     def _get_cache_age(self, airport_iata: str) -> float | None:
         """Return cache age in seconds, or None if not cached."""
         with _cache_lock:

@@ -332,36 +332,49 @@
             }
         }
 
-        // ---- Hourly departure banner refresh (independent of main search) ----
-        const BANNER_REFRESH_MS = 3600000; // 1 hour
+        // ---- Departed counts banner (independent of main search) ----
+        const BANNER_REFRESH_MS = 120000; // refresh every 2 min (matches flight cache TTL)
         let bannerRefreshTimer = null;
+        let bannerDepartedCounts = {}; // separate from lastData — never overwritten by search
 
         async function refreshDepartureBanner() {
             try {
-                const promises = MAJOR_AIRPORTS.map(async (iata) => {
-                    try {
-                        const resp = await fetchWithTimeout(`${API_BASE}/departures/${iata}`, 20000);
-                        const data = await safeJson(resp);
-                        if (!data.error && data.flights) {
-                            // Update lastData for this airport (merge, don't overwrite other airports)
-                            if (!lastData) lastData = {};
-                            lastData[iata] = {
-                                airport_name: data.airport_name,
-                                city: data.city,
-                                flights: data.flights,
-                                departed_today: data.departed_today || 0,
-                            };
-                        }
-                    } catch (e) { /* individual airport failure is OK */ }
-                });
-                await Promise.all(promises);
-                updateDepartedSummary();
+                const resp = await fetchWithTimeout(`${API_BASE}/departed-counts`, 20000);
+                const data = await safeJson(resp);
+                if (!data.error && data.counts) {
+                    bannerDepartedCounts = data.counts;
+                    renderDepartedBanner();
+                }
             } catch (e) { /* banner refresh is best-effort */ }
+        }
+
+        function renderDepartedBanner() {
+            const banner = document.getElementById('airport-departures-banner');
+            const bannerContent = document.getElementById('airport-departures-content');
+            const oldSummary = document.getElementById('departed-summary');
+            if (oldSummary) oldSummary.classList.add('hidden');
+
+            if (Object.keys(bannerDepartedCounts).length > 0) {
+                const chips = MAJOR_AIRPORTS
+                    .filter(iata => iata in bannerDepartedCounts)
+                    .map(iata => {
+                        const departed = bannerDepartedCounts[iata] || 0;
+                        const cls = departed > 0 ? 'dep-chip dep-chip-active' : 'dep-chip dep-chip-zero';
+                        return `<span class="${cls}"><strong>${esc(iata)}</strong> ${departed}</span>`;
+                    });
+                if (chips.length > 0) {
+                    bannerContent.innerHTML = `<strong>Departed (6h):</strong> ` + chips.join('');
+                    banner.classList.remove('hidden');
+                } else {
+                    banner.classList.add('hidden');
+                }
+            } else {
+                banner.classList.add('hidden');
+            }
         }
 
         function startBannerRefresh() {
             if (bannerRefreshTimer) clearInterval(bannerRefreshTimer);
-            // Initial load of banner data
             refreshDepartureBanner();
             bannerRefreshTimer = setInterval(refreshDepartureBanner, BANNER_REFRESH_MS);
         }
@@ -646,36 +659,16 @@
             });
         }
 
-        // Show departed counts for all major hub airports
-        const DEPARTED_BANNER_AIRPORTS = MAJOR_AIRPORTS;
-
         function updateDepartedSummary() {
-            // --- Top banner: per-airport departed counts (6h) ---
-            const banner = document.getElementById('airport-departures-banner');
-            const bannerContent = document.getElementById('airport-departures-content');
-
-            // Hide the old departed-summary row (replaced by banner)
-            const oldSummary = document.getElementById('departed-summary');
-            if (oldSummary) oldSummary.classList.add('hidden');
-
-            if (lastData && Object.keys(lastData).length > 0) {
-                const chips = DEPARTED_BANNER_AIRPORTS
-                    .filter(iata => lastData[iata])
-                    .map(iata => {
-                        const info = lastData[iata];
-                        const departed = info.departed_today || 0;
-                        const cls = departed > 0 ? 'dep-chip dep-chip-active' : 'dep-chip dep-chip-zero';
-                        return `<span class="${cls}"><strong>${esc(iata)}</strong> ${departed}</span>`;
-                    });
-                if (chips.length > 0) {
-                    bannerContent.innerHTML = `<strong>Departed (6h):</strong> ` + chips.join('');
-                    banner.classList.remove('hidden');
-                } else {
-                    banner.classList.add('hidden');
+            // Merge any departed_today from search results into banner counts
+            if (lastData) {
+                for (const [iata, info] of Object.entries(lastData)) {
+                    if (info.departed_today !== undefined) {
+                        bannerDepartedCounts[iata] = info.departed_today;
+                    }
                 }
-            } else {
-                banner.classList.add('hidden');
             }
+            renderDepartedBanner();
         }
 
         function applyFiltersAndRender() {
