@@ -141,8 +141,6 @@
             <div class="status-pills">
                 <button class="status-pill active" data-status="scheduled" onclick="toggleStatusPill(this)">Scheduled</button>
                 <button class="status-pill active" data-status="estimated" onclick="toggleStatusPill(this)">Estimated</button>
-                <button class="status-pill" data-status="delayed" onclick="toggleStatusPill(this)">Delayed</button>
-                <button class="status-pill" data-status="unknown" onclick="toggleStatusPill(this)">Unknown</button>
             </div>
             <div class="filter-meta">
                 <select id="filter-availability" class="filter-select">
@@ -333,6 +331,43 @@
             }
         }
 
+        // ---- Hourly departure banner refresh (independent of main search) ----
+        const BANNER_REFRESH_MS = 3600000; // 1 hour
+        let bannerRefreshTimer = null;
+
+        async function refreshDepartureBanner() {
+            try {
+                const promises = MAJOR_AIRPORTS.map(async (iata) => {
+                    try {
+                        const resp = await fetchWithTimeout(`${API_BASE}/departures/${iata}`, 20000);
+                        const data = await safeJson(resp);
+                        if (!data.error && data.flights) {
+                            // Update lastData for this airport (merge, don't overwrite other airports)
+                            if (!lastData) lastData = {};
+                            lastData[iata] = {
+                                airport_name: data.airport_name,
+                                city: data.city,
+                                flights: data.flights,
+                                departed_today: data.departed_today || 0,
+                            };
+                        }
+                    } catch (e) { /* individual airport failure is OK */ }
+                });
+                await Promise.all(promises);
+                updateDepartedSummary();
+            } catch (e) { /* banner refresh is best-effort */ }
+        }
+
+        function startBannerRefresh() {
+            if (bannerRefreshTimer) clearInterval(bannerRefreshTimer);
+            // Initial load of banner data
+            refreshDepartureBanner();
+            bannerRefreshTimer = setInterval(refreshDepartureBanner, BANNER_REFRESH_MS);
+        }
+
+        // Start banner refresh on page load
+        startBannerRefresh();
+
         // ---- Filters ----
 
         function getStatusFilters() {
@@ -351,11 +386,10 @@
 
         function filterFlights(flights) {
             const allowed = getStatusFilters();
+            if (allowed.length === 0) return flights; // no pills active = show all
             return flights.filter(f => {
                 const s = f.status.toLowerCase();
-                if (allowed.includes(s)) return true;
-                if (allowed.includes('unknown') && !['scheduled', 'estimated', 'delayed', 'canceled', 'cancelled', 'diverted', 'landed'].includes(s)) return true;
-                return false;
+                return allowed.includes(s);
             });
         }
 
